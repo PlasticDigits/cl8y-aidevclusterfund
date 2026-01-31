@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { isAddress } from 'viem';
 import { toast } from 'sonner';
@@ -16,13 +16,12 @@ interface TransferModalProps {
 export function TransferModal({ isOpen, onClose, tokenId, onSuccess }: TransferModalProps) {
   const { address } = useAccount();
   const [recipient, setRecipient] = useState('');
-  const [isValidAddress, setIsValidAddress] = useState(false);
 
   const trancheAddress = ADDRESSES.DONATION_TRANCHE;
 
-  // Validate address on change
-  useEffect(() => {
-    setIsValidAddress(recipient !== '' && isAddress(recipient) && recipient.toLowerCase() !== address?.toLowerCase());
+  // Validate address - derived state using useMemo
+  const isValidAddress = useMemo(() => {
+    return recipient !== '' && isAddress(recipient) && recipient.toLowerCase() !== address?.toLowerCase();
   }, [recipient, address]);
 
   // Write contract hook for transfer
@@ -61,22 +60,31 @@ export function TransferModal({ isOpen, onClose, tokenId, onSuccess }: TransferM
     }
   }, [confirmError]);
 
-  // Handle successful transfer
-  useEffect(() => {
-    if (isConfirmed) {
-      toast.success('Note transferred successfully!', {
-        description: `Note #${tokenId.toString()} sent to ${recipient.slice(0, 6)}...${recipient.slice(-4)}`,
-      });
-      onSuccess?.();
-      handleClose();
-    }
-  }, [isConfirmed]);
-
-  const handleClose = () => {
+  // Define handleClose with useCallback before using it
+  const handleClose = useCallback(() => {
     setRecipient('');
     resetWrite();
     onClose();
-  };
+  }, [resetWrite, onClose]);
+
+  // Track previous confirmed state
+  const prevIsConfirmed = useRef(false);
+
+  // Handle successful transfer with stable callback
+  const handleTransferSuccess = useCallback(() => {
+    toast.success('Note transferred successfully!', {
+      description: `Note #${tokenId.toString()} sent to ${recipient.slice(0, 6)}...${recipient.slice(-4)}`,
+    });
+    onSuccess?.();
+    handleClose();
+  }, [tokenId, recipient, onSuccess, handleClose]);
+
+  useEffect(() => {
+    if (isConfirmed && !prevIsConfirmed.current) {
+      queueMicrotask(handleTransferSuccess);
+    }
+    prevIsConfirmed.current = isConfirmed;
+  }, [isConfirmed, handleTransferSuccess]);
 
   const handleTransfer = () => {
     if (!address || !trancheAddress || !isValidAddress) return;

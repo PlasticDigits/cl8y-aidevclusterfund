@@ -47,10 +47,12 @@ export function PortfolioSummary() {
     query: { enabled: noteCount > 0 && !!address && !!trancheAddress },
   });
 
-  // Extract token IDs from results
-  const tokenIds: bigint[] = tokenIdResults
-    ?.map(result => result.status === 'success' ? result.result as bigint : null)
-    .filter((id): id is bigint => id !== null) ?? [];
+  // Extract token IDs from results - memoized to avoid dependency changes
+  const tokenIds: bigint[] = useMemo(() => {
+    return tokenIdResults
+      ?.map(result => result.status === 'success' ? result.result as bigint : null)
+      .filter((id): id is bigint => id !== null) ?? [];
+  }, [tokenIdResults]);
 
   // Build contract calls for note info
   const noteInfoCalls = tokenIds.map(tokenId => ({

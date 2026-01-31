@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { INVITE_CODE, INVITE_CODE_STORAGE_KEY } from '@/lib/config';
 
 interface Props {
@@ -6,14 +6,12 @@ interface Props {
 }
 
 export function AccessGate({ children }: Props) {
-  const [hasAccess, setHasAccess] = useState<boolean | null>(null);
+  const [hasAccess, setHasAccess] = useState<boolean>(() => {
+    const stored = localStorage.getItem(INVITE_CODE_STORAGE_KEY);
+    return stored === 'true';
+  });
   const [inputCode, setInputCode] = useState('');
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    const stored = localStorage.getItem(INVITE_CODE_STORAGE_KEY);
-    setHasAccess(stored === 'true');
-  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,15 +23,6 @@ export function AccessGate({ children }: Props) {
       setError('Invalid invite code');
     }
   };
-
-  // Loading state
-  if (hasAccess === null) {
-    return (
-      <div className="min-h-screen bg-[var(--black)] flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-[var(--gold)] border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
 
   // Unlocked - show app
   if (hasAccess) {

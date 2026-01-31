@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { formatUnits, parseUnits } from 'viem';
 import { toast } from 'sonner';
@@ -121,36 +121,51 @@ export function RepayModal({ isOpen, onClose, tokenId, noteInfo, onSuccess }: Re
     }
   }, [approveError, repayError]);
 
-  // Handle approve success
-  useEffect(() => {
-    if (isApproveSuccess) {
-      refetchAllowance();
-      setStep('repay');
-      executeRepay();
-    }
-  }, [isApproveSuccess]);
-
-  // Handle repay success
-  useEffect(() => {
-    if (isRepaySuccess) {
-      setStep('success');
-      toast.success('Repayment successful!', {
-        description: `Repaid ${amount} USDT on Note #${tokenId.toString()}`,
-      });
-      onSuccess?.();
-      setTimeout(() => {
-        handleClose();
-      }, 1500);
-    }
-  }, [isRepaySuccess]);
-
-  const handleClose = () => {
+  // Define handleClose early with useCallback
+  const handleClose = useCallback(() => {
     setAmount('');
     setStep('input');
     resetApprove();
     resetRepay();
     onClose();
-  };
+  }, [resetApprove, resetRepay, onClose]);
+
+  // Track previous success states
+  const prevApproveSuccess = useRef(false);
+  const prevRepaySuccess = useRef(false);
+
+  // Stable approve success handler - need to use ref for executeRepay since it's defined later
+  const executeRepayRef = useRef<() => void>();
+
+  // Handle approve success
+  useEffect(() => {
+    if (isApproveSuccess && !prevApproveSuccess.current) {
+      refetchAllowance();
+      setStep('repay');
+      executeRepayRef.current?.();
+    }
+    prevApproveSuccess.current = isApproveSuccess;
+  }, [isApproveSuccess, refetchAllowance]);
+
+  // Stable repay success handler
+  const handleRepaySuccess = useCallback(() => {
+    setStep('success');
+    toast.success('Repayment successful!', {
+      description: `Repaid ${amount} USDT on Note #${tokenId.toString()}`,
+    });
+    onSuccess?.();
+    setTimeout(() => {
+      handleClose();
+    }, 1500);
+  }, [amount, tokenId, onSuccess, handleClose]);
+
+  // Handle repay success
+  useEffect(() => {
+    if (isRepaySuccess && !prevRepaySuccess.current) {
+      handleRepaySuccess();
+    }
+    prevRepaySuccess.current = isRepaySuccess;
+  }, [isRepaySuccess, handleRepaySuccess]);
 
   const amountWei = useMemo(() => {
     if (!amount || isNaN(parseFloat(amount))) return BigInt(0);
@@ -182,7 +197,7 @@ export function RepayModal({ isOpen, onClose, tokenId, noteInfo, onSuccess }: Re
     });
   };
 
-  const executeRepay = () => {
+  const executeRepay = useCallback(() => {
     if (!trancheAddress) return;
     setStep('repay');
     repay({
@@ -191,7 +206,10 @@ export function RepayModal({ isOpen, onClose, tokenId, noteInfo, onSuccess }: Re
       functionName: 'repay',
       args: [tokenId, amountWei],
     });
-  };
+  }, [trancheAddress, repay, tokenId, amountWei]);
+
+  // Keep ref updated for use in approve success effect
+  executeRepayRef.current = executeRepay;
 
   const handleRepay = () => {
     if (needsApproval) {

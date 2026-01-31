@@ -1,25 +1,10 @@
 import { type ReactNode } from 'react';
-import { WagmiProvider as WagmiProviderBase, createConfig, http } from 'wagmi';
-import { bsc } from 'wagmi/chains';
+import { WagmiProvider as WagmiProviderBase } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { injected, walletConnect } from 'wagmi/connectors';
 import { TestWalletProvider } from './TestWalletProvider';
+import { wagmiConfig } from '@/lib/wagmiConfig';
 
-const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
 const isTestMode = import.meta.env.VITE_TEST_MODE === 'true';
-
-const connectors = projectId
-  ? [injected(), walletConnect({ projectId })]
-  : [injected()];
-
-export const wagmiConfig = createConfig({
-  chains: [bsc],
-  connectors,
-  transports: {
-    [bsc.id]: http(import.meta.env.VITE_BSC_RPC_URL || 'https://bsc-dataseed.binance.org'),
-  },
-  ssr: false,
-});
 
 const queryClient = new QueryClient({
   defaultOptions: {

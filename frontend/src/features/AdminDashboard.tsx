@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { toast } from 'sonner';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
@@ -125,45 +125,78 @@ export function AdminDashboard() {
     if (startNextError) toast.error('Failed to start next tranche', { description: startNextError.message.slice(0, 100) });
   }, [startError, scheduleError, aprError, vaultError, startNextError]);
 
-  // Handle success
+  // Track previous success states to detect transitions
+  const prevStartSuccess = useRef(false);
+  const prevScheduleSuccess = useRef(false);
+  const prevAprSuccess = useRef(false);
+  const prevVaultSuccess = useRef(false);
+  const prevStartNextSuccess = useRef(false);
+
+  // Stable success handlers using useCallback
+  const handleStartSuccess = useCallback(() => {
+    toast.success('First tranche started!');
+    refetchFirstTranche();
+  }, [refetchFirstTranche]);
+
+  const handleScheduleSuccess = useCallback(() => {
+    toast.success(`Scheduled additional tranches`);
+    refetchScheduled();
+    setTrancheCount('1');
+  }, [refetchScheduled]);
+
+  const handleAprSuccess = useCallback(() => {
+    toast.success('APR updated successfully');
+    refetchApr();
+    setNewAprPercent('');
+  }, [refetchApr]);
+
+  const handleVaultSuccess = useCallback(() => {
+    toast.success('Vault address updated');
+    refetchVault();
+    setNewVaultAddress('');
+  }, [refetchVault]);
+
+  const handleStartNextSuccess = useCallback(() => {
+    toast.success('Next tranche started!');
+    refetchCurrentTranche();
+    refetchScheduled();
+  }, [refetchCurrentTranche, refetchScheduled]);
+
+  // Handle success state transitions - use queueMicrotask to defer setState
   useEffect(() => {
-    if (startSuccess) {
-      toast.success('First tranche started!');
-      refetchFirstTranche();
+    if (startSuccess && !prevStartSuccess.current) {
+      queueMicrotask(handleStartSuccess);
     }
-  }, [startSuccess]);
+    prevStartSuccess.current = startSuccess;
+  }, [startSuccess, handleStartSuccess]);
 
   useEffect(() => {
-    if (scheduleSuccess) {
-      toast.success(`Scheduled ${trancheCount} additional tranches`);
-      refetchScheduled();
-      setTrancheCount('1');
+    if (scheduleSuccess && !prevScheduleSuccess.current) {
+      queueMicrotask(handleScheduleSuccess);
     }
-  }, [scheduleSuccess]);
+    prevScheduleSuccess.current = scheduleSuccess;
+  }, [scheduleSuccess, handleScheduleSuccess]);
 
   useEffect(() => {
-    if (aprSuccess) {
-      toast.success('APR updated successfully');
-      refetchApr();
-      setNewAprPercent('');
+    if (aprSuccess && !prevAprSuccess.current) {
+      queueMicrotask(handleAprSuccess);
     }
-  }, [aprSuccess]);
+    prevAprSuccess.current = aprSuccess;
+  }, [aprSuccess, handleAprSuccess]);
 
   useEffect(() => {
-    if (vaultSuccess) {
-      toast.success('Vault address updated');
-      refetchVault();
-      setNewVaultAddress('');
+    if (vaultSuccess && !prevVaultSuccess.current) {
+      queueMicrotask(handleVaultSuccess);
     }
-  }, [vaultSuccess]);
+    prevVaultSuccess.current = vaultSuccess;
+  }, [vaultSuccess, handleVaultSuccess]);
 
   useEffect(() => {
-    if (startNextSuccess) {
-      toast.success('Next tranche started!');
-      refetchCurrentTranche();
-      refetchScheduled();
+    if (startNextSuccess && !prevStartNextSuccess.current) {
+      queueMicrotask(handleStartNextSuccess);
     }
-  }, [startNextSuccess, refetchCurrentTranche, refetchScheduled]);
+    prevStartNextSuccess.current = startNextSuccess;
+  }, [startNextSuccess, handleStartNextSuccess]);
 
   // Action handlers
   const handleStartFirstTranche = () => {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAccount, useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { formatUnits } from 'viem';
 import { toast } from 'sonner';
@@ -171,15 +171,24 @@ export function VaultDashboard() {
     }
   }, [approveSuccess, refetchBalance]);
 
+  // Track previous repay success state
+  const prevRepaySuccess = useRef(false);
+
+  // Stable repay success handler
+  const handleRepaySuccess = useCallback(() => {
+    toast.success('Note repaid successfully!');
+    refetchNoteInfo();
+    refetchNoteBalance();
+    setRepayTokenId('');
+    setRepayAmount('');
+  }, [refetchNoteInfo, refetchNoteBalance]);
+
   useEffect(() => {
-    if (repaySuccess) {
-      toast.success('Note repaid successfully!');
-      refetchNoteInfo();
-      refetchNoteBalance();
-      setRepayTokenId('');
-      setRepayAmount('');
+    if (repaySuccess && !prevRepaySuccess.current) {
+      queueMicrotask(handleRepaySuccess);
     }
-  }, [repaySuccess, refetchNoteInfo, refetchNoteBalance]);
+    prevRepaySuccess.current = repaySuccess;
+  }, [repaySuccess, handleRepaySuccess]);
 
   // Action handlers
   const handleWithdraw = () => {
