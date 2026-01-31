@@ -1,1 +1,5 @@
+# Run gitleaks to check for secrets
+gitleaks protect --staged --config .gitleaks.toml
+
+# Run TypeScript check and tests
 cd frontend && npx tsc --noEmit && npm test -- --run
