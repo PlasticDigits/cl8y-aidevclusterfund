@@ -2,7 +2,7 @@
   "name": "fund",
   "private": true,
   "scripts": {
-    "prepare": "husky",
+    "prepare": "[ \"$CI\" = true ] || husky",
     "typecheck": "cd frontend && npx tsc --noEmit"
   },
   "devDependencies": {
