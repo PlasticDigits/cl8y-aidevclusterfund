@@ -2,7 +2,7 @@ import { createConfig, http } from 'wagmi';
 import { bsc } from 'wagmi/chains';
 import { injected, walletConnect } from 'wagmi/connectors';
 
-const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
+const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as string | undefined;
 
 /**
  * Production wagmi config
@@ -23,7 +23,16 @@ export const wagmiConfig = createConfig({
     }),
     // WalletConnect: optional, for mobile/remote wallets only
     // Only included if project ID is configured
-    ...(projectId ? [walletConnect({ projectId })] : []),
+    ...(projectId ? [walletConnect({ 
+      projectId,
+      showQrModal: true,
+      metadata: {
+        name: 'CL8Y Fund',
+        description: 'Donate to CL8Y AI infrastructure',
+        url: 'https://fund.cl8y.com',
+        icons: ['https://fund.cl8y.com/favicon.svg'],
+      },
+    })] : []),
   ],
   transports: {
     [bsc.id]: http(import.meta.env.VITE_BSC_RPC_URL || 'https://bsc-dataseed.binance.org'),

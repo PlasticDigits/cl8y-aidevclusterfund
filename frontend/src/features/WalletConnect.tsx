@@ -5,9 +5,14 @@ import { EXPECTED_CHAIN_ID, EXPECTED_CHAIN_NAME, IS_TEST_MODE } from '@/lib/conf
 
 export function WalletConnect() {
   const { address, isConnected, chainId } = useAccount();
-  const { connect, connectors, isPending } = useConnect();
+  const { connect, connectors, isPending, error: connectError } = useConnect();
   const { disconnect } = useDisconnect();
   const { switchChain, isPending: isSwitching } = useSwitchChain();
+  
+  // Log connect errors to console for debugging
+  if (connectError) {
+    console.error('Wallet connect error:', connectError);
+  }
   
   // Read balance from the expected chain
   const { data: balance, isLoading: balanceLoading } = useBalance({ 
@@ -57,45 +62,64 @@ export function WalletConnect() {
   const mockConnector = connectors.find(c => c.type === 'mock');
   const walletConnectConnector = connectors.find(c => c.type === 'walletConnect');
 
+  const handleConnect = async (connector: typeof connectors[number]) => {
+    try {
+      console.log('Connecting with:', connector.name, connector.type);
+      await connect({ connector });
+    } catch (err) {
+      console.error('Connect failed:', err);
+    }
+  };
+
   return (
-    <div className="flex gap-2 items-center">
-      {/* EIP-6963 discovered wallets - privacy respecting */}
-      {injectedWallets.map((connector) => (
-        <Button
-          key={connector.uid}
-          variant="primary"
-          size="sm"
-          onClick={() => connect({ connector })}
-          isLoading={isPending}
-        >
-          {connector.name === 'Injected' ? 'Connect Wallet' : connector.name}
-        </Button>
-      ))}
+    <div className="flex flex-col items-end gap-1">
+      {/* Button row - all buttons aligned */}
+      <div className="flex gap-2 items-center">
+        {/* EIP-6963 discovered wallets - privacy respecting */}
+        {injectedWallets.map((connector) => (
+          <Button
+            key={connector.uid}
+            variant="primary"
+            size="sm"
+            onClick={() => handleConnect(connector)}
+            isLoading={isPending}
+          >
+            {connector.name === 'Injected' ? 'Connect Wallet' : connector.name}
+          </Button>
+        ))}
+        
+        {/* Mock wallet - test mode only, for quick testing with Anvil account */}
+        {IS_TEST_MODE && mockConnector && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => handleConnect(mockConnector)}
+            isLoading={isPending}
+            title="Use Anvil test account (0xf39F...)"
+          >
+            Mock Wallet
+          </Button>
+        )}
+        
+        {/* WalletConnect as separate option */}
+        {walletConnectConnector && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleConnect(walletConnectConnector)}
+            isLoading={isPending}
+            title="WalletConnect (Note: collects user data)"
+          >
+            WalletConnect
+          </Button>
+        )}
+      </div>
       
-      {/* Mock wallet - test mode only, for quick testing with Anvil account */}
-      {IS_TEST_MODE && mockConnector && (
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => connect({ connector: mockConnector })}
-          isLoading={isPending}
-          title="Use Anvil test account (0xf39F...)"
-        >
-          Mock Wallet
-        </Button>
-      )}
-      
-      {/* WalletConnect as separate option with warning */}
+      {/* Warning row - below buttons */}
       {walletConnectConnector && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => connect({ connector: walletConnectConnector })}
-          isLoading={isPending}
-          title="WalletConnect (Note: collects user data)"
-        >
-          WalletConnect
-        </Button>
+        <span className="text-[10px] text-[var(--ember)] opacity-70">
+          ⚠️ Collects data
+        </span>
       )}
     </div>
   );

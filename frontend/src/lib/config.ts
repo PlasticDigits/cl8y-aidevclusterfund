@@ -16,6 +16,13 @@ export const ADDRESSES = {
   DONATION_VAULT: import.meta.env.VITE_DONATION_VAULT_ADDRESS as `0x${string}` | undefined,
 } as const;
 
+// Operator addresses (comma-separated in env var) - these wallets can access admin dashboard
+// TODO: Replace with on-chain AccessManager role check for better security
+const operatorEnv = import.meta.env.VITE_OPERATOR_ADDRESSES as string | undefined;
+export const OPERATOR_ADDRESSES: readonly string[] = operatorEnv
+  ? operatorEnv.split(',').map(a => a.trim().toLowerCase())
+  : [];
+
 // Test mode helpers
 export const IS_TEST_MODE = isTestMode;
 

@@ -67,8 +67,10 @@ export function TrancheCard({ tranche, onDeposit, isConnected }: Props) {
     );
   }
 
+  const timeUntilStart = Math.max(0, tranche.startTime - now);
   const timeRemaining = Math.max(0, tranche.endTime - now);
   const isFull = tranche.totalDeposited >= (tranche.cap || TRANCHE_CAP_USDT);
+  const hasStarted = now >= tranche.startTime;
   
   // Determine status
   let status = 'Active';
@@ -79,6 +81,9 @@ export function TrancheCard({ tranche, onDeposit, isConnected }: Props) {
   } else if (isFull) {
     status = 'Full - Ready for Collection';
     statusColor = 'text-[var(--gold)]';
+  } else if (!hasStarted) {
+    status = 'Scheduled';
+    statusColor = 'text-[var(--aqua)]';
   } else if (!tranche.isActive && timeRemaining <= 0) {
     status = 'Ended';
     statusColor = 'text-[var(--text-muted)]';
@@ -100,7 +105,15 @@ export function TrancheCard({ tranche, onDeposit, isConnected }: Props) {
               {status}
             </p>
           </div>
-          {tranche.isActive && timeRemaining > 0 && (
+          {!hasStarted && timeUntilStart > 0 && (
+            <div className="text-right">
+              <p className="text-sm text-[var(--text-muted)]">Starts In</p>
+              <p className="font-mono text-[var(--aqua)]">
+                {formatCountdown(timeUntilStart)}
+              </p>
+            </div>
+          )}
+          {hasStarted && tranche.isActive && timeRemaining > 0 && (
             <div className="text-right">
               <p className="text-sm text-[var(--text-muted)]">Time Remaining</p>
               <p className="font-mono text-[var(--gold)]">
@@ -166,8 +179,8 @@ export function TrancheCard({ tranche, onDeposit, isConnected }: Props) {
             </div>
           </div>
 
-          {/* Deposit Button */}
-          {tranche.isActive && (
+          {/* Deposit Button - only when tranche has started and is active */}
+          {hasStarted && tranche.isActive && (
             <div className="pt-4">
               {isConnected ? (
                 <Button
@@ -188,6 +201,15 @@ export function TrancheCard({ tranche, onDeposit, isConnected }: Props) {
                   Connect Wallet to Contribute
                 </Button>
               )}
+            </div>
+          )}
+          
+          {/* Coming soon message for scheduled tranches */}
+          {!hasStarted && (
+            <div className="pt-4 text-center">
+              <p className="text-[var(--text-secondary)] text-sm">
+                Contributions open when tranche starts
+              </p>
             </div>
           )}
         </div>

@@ -11,7 +11,7 @@ import { PastTranches } from '@/features/PastTranches';
 import { ScheduledTranches } from '@/features/ScheduledTranches';
 import { DepositModal } from '@/features/DepositModal';
 import { PortfolioSummary } from '@/features/PortfolioSummary';
-import { ADDRESSES, TRANCHE_CAP_USDT, IS_TEST_MODE } from '@/lib/config';
+import { ADDRESSES, TRANCHE_CAP_USDT, IS_TEST_MODE, OPERATOR_ADDRESSES } from '@/lib/config';
 import { DonationTrancheABI } from '@/lib/abi/DonationTranche';
 import { parseEther } from 'viem';
 
@@ -25,18 +25,14 @@ function Dashboard() {
   const { address, isConnected } = useAccount();
   const trancheAddress = ADDRESSES.DONATION_TRANCHE;
 
-  // Check if user is admin (authority of the contract)
-  const { data: authority } = useReadContract({
-    address: trancheAddress,
-    abi: DonationTrancheABI,
-    functionName: 'authority',
-    query: { enabled: !!trancheAddress },
-  });
-
-  // In test mode, deployer is admin
-  const isAdmin = IS_TEST_MODE 
+  // Check if user is operator (can access admin dashboard)
+  // In test mode, deployer is operator; in production, check OPERATOR_ADDRESSES env var
+  const isOperator = IS_TEST_MODE 
     ? address?.toLowerCase() === '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'.toLowerCase()
-    : authority?.toLowerCase() === address?.toLowerCase();
+    : OPERATOR_ADDRESSES.includes(address?.toLowerCase() ?? '');
+  
+  // Alias for backwards compatibility
+  const isAdmin = isOperator;
 
   // Read current tranche data
   const { data: trancheData, refetch: refetchTranche } = useReadContract({
