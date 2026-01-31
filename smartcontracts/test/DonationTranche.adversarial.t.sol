@@ -6,6 +6,7 @@ import "../src/DonationTranche.sol";
 import "../src/DonationMatchVault.sol";
 import "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 // Mock USDT for testing
 contract MockUSDT is ERC20 {
@@ -109,24 +110,32 @@ contract DonationTrancheAdversarialTest is Test {
         // Deploy vault
         vault = new DonationMatchVault(multisig, address(usdt));
         
-        // Deploy DonationTranche
-        tranche = new DonationTranche(
+        // Deploy DonationTranche implementation
+        DonationTranche trancheImpl = new DonationTranche();
+        
+        // Deploy proxy with initialization
+        bytes memory initData = abi.encodeWithSelector(
+            DonationTranche.initialize.selector,
             address(accessManager),
             address(usdt),
             clusterManager,
             address(vault)
         );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(trancheImpl), initData);
+        tranche = DonationTranche(address(proxy));
         
         // Setup access control
         vm.startPrank(admin);
         accessManager.grantRole(ADMIN_ROLE, admin, 0);
         
-        bytes4[] memory selectors = new bytes4[](5);
+        bytes4[] memory selectors = new bytes4[](7);
         selectors[0] = DonationTranche.startFirstTranche.selector;
-        selectors[1] = DonationTranche.startNextTranche.selector;
+        selectors[1] = DonationTranche.adminStartNextTranche.selector;
         selectors[2] = DonationTranche.scheduleAdditionalTranches.selector;
         selectors[3] = DonationTranche.setVault.selector;
         selectors[4] = DonationTranche.setDefaultApr.selector;
+        selectors[5] = DonationTranche.setDefaultTrancheCap.selector;
+        selectors[6] = DonationTranche.setTrancheCap.selector;
         accessManager.setTargetFunctionRole(address(tranche), selectors, ADMIN_ROLE);
         vm.stopPrank();
         
@@ -163,18 +172,24 @@ contract DonationTrancheAdversarialTest is Test {
         tranche.startFirstTranche(block.timestamp);
     }
     
-    function test_NonAdminCannotStartNextTranche() public {
+    function test_AnyoneCanStartNextTrancheWhenScheduledTimeReached() public {
         // First start tranche as admin
         vm.prank(admin);
         tranche.startFirstTranche(block.timestamp);
         
-        // Exhaust tranche and try to start next as non-admin
+        // Make a deposit
+        vm.prank(user1);
+        tranche.deposit(100 ether);
+        
+        // Wait for tranche to end and collect
         skip(2 weeks + 1);
         tranche.collectTranche(1);
         
+        // Anyone can start when scheduled time is reached
         vm.prank(attacker);
-        vm.expectRevert();
         tranche.startNextTranche();
+        
+        assertEq(tranche.currentTrancheId(), 2);
     }
     
     function test_NonAdminCannotScheduleTranches() public {
@@ -183,7 +198,7 @@ contract DonationTrancheAdversarialTest is Test {
         
         vm.prank(attacker);
         vm.expectRevert();
-        tranche.scheduleAdditionalTranches(5, 0);
+        tranche.scheduleAdditionalTranches(5, 0, 0);
     }
     
     function test_NonAdminCannotSetVault() public {
@@ -196,6 +211,42 @@ contract DonationTrancheAdversarialTest is Test {
         vm.prank(attacker);
         vm.expectRevert();
         tranche.setDefaultApr(10000);
+    }
+    
+    function test_NonAdminCannotSetDefaultTrancheCap() public {
+        vm.prank(attacker);
+        vm.expectRevert();
+        tranche.setDefaultTrancheCap(5000 ether);
+    }
+    
+    function test_NonAdminCannotSetTrancheCap() public {
+        vm.prank(admin);
+        tranche.startFirstTranche(block.timestamp);
+        
+        vm.prank(attacker);
+        vm.expectRevert();
+        tranche.setTrancheCap(1, 5000 ether);
+    }
+    
+    function test_NonAdminCannotStartTrancheEarly() public {
+        vm.prank(admin);
+        tranche.startFirstTranche(block.timestamp);
+        
+        // Fill and collect early
+        vm.prank(user1);
+        tranche.deposit(1584 ether);
+        tranche.collectTranche(1);
+        
+        // Attacker cannot start early (scheduled time not reached)
+        vm.prank(attacker);
+        vm.expectRevert(DonationTranche.ScheduledTimeNotReached.selector);
+        tranche.startNextTranche();
+        
+        // But admin can use adminStartNextTranche
+        vm.prank(admin);
+        tranche.adminStartNextTranche();
+        
+        assertEq(tranche.currentTrancheId(), 2);
     }
     
     function test_NonOwnerCannotWithdrawVault() public {
@@ -660,7 +711,7 @@ contract DonationTrancheAdversarialTest is Test {
         
         // Should be able to schedule more and restart
         vm.prank(admin);
-        tranche.scheduleAdditionalTranches(2, 0);
+        tranche.scheduleAdditionalTranches(2, 0, 0);
         
         vm.prank(admin);
         tranche.startNextTranche();
@@ -1053,7 +1104,7 @@ contract DonationTrancheAdversarialTest is Test {
         
         // Schedule and restart
         vm.prank(admin);
-        tranche.scheduleAdditionalTranches(1, 0);
+        tranche.scheduleAdditionalTranches(1, 0, 0);
         
         vm.prank(admin);
         tranche.startNextTranche();

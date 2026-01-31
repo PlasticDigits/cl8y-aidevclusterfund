@@ -6,6 +6,7 @@ import "../src/DonationTranche.sol";
 import "../src/DonationMatchVault.sol";
 import "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 // Mock USDT for testing
 contract MockUSDT is ERC20 {
@@ -45,25 +46,33 @@ contract DonationTrancheTest is Test {
         // Deploy vault
         vault = new DonationMatchVault(multisig, address(usdt));
         
-        // Deploy DonationTranche
-        tranche = new DonationTranche(
+        // Deploy DonationTranche implementation
+        DonationTranche trancheImpl = new DonationTranche();
+        
+        // Deploy proxy with initialization
+        bytes memory initData = abi.encodeWithSelector(
+            DonationTranche.initialize.selector,
             address(accessManager),
             address(usdt),
             clusterManager,
             address(vault)
         );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(trancheImpl), initData);
+        tranche = DonationTranche(address(proxy));
         
         // Setup access control - grant admin role to admin address
         vm.startPrank(admin);
         accessManager.grantRole(ADMIN_ROLE, admin, 0);
         
         // Set target function roles for DonationTranche
-        bytes4[] memory selectors = new bytes4[](5);
+        bytes4[] memory selectors = new bytes4[](7);
         selectors[0] = DonationTranche.startFirstTranche.selector;
-        selectors[1] = DonationTranche.startNextTranche.selector;
+        selectors[1] = DonationTranche.adminStartNextTranche.selector;
         selectors[2] = DonationTranche.scheduleAdditionalTranches.selector;
         selectors[3] = DonationTranche.setVault.selector;
         selectors[4] = DonationTranche.setDefaultApr.selector;
+        selectors[5] = DonationTranche.setDefaultTrancheCap.selector;
+        selectors[6] = DonationTranche.setTrancheCap.selector;
         accessManager.setTargetFunctionRole(address(tranche), selectors, ADMIN_ROLE);
         vm.stopPrank();
         
@@ -449,7 +458,7 @@ contract DonationTrancheTest is Test {
         
         // Admin schedules more tranches
         vm.prank(admin);
-        tranche.scheduleAdditionalTranches(3, 0);
+        tranche.scheduleAdditionalTranches(3, 0, 0);
         assertEq(tranche.scheduledTrancheCount(), 3);
         
         // BUG: startFirstTranche reverts because it was already started
@@ -545,7 +554,7 @@ contract DonationTrancheTest is Test {
         tranche.startFirstTranche(block.timestamp);
         
         vm.prank(admin);
-        tranche.scheduleAdditionalTranches(3, 0); // count=3, auto start
+        tranche.scheduleAdditionalTranches(3, 0, 0); // count=3, auto start
         
         assertEq(tranche.scheduledTrancheCount(), 8); // 5 remaining + 3 new
     }
@@ -1214,10 +1223,10 @@ contract DonationTrancheTest is Test {
         
         // Schedule 3 more tranches
         vm.prank(admin);
-        tranche.scheduleAdditionalTranches(3, 0); // count=3, start=0 (auto)
+        tranche.scheduleAdditionalTranches(3, 0, 0); // count=3, start=0 (auto)
         
         // Get scheduled tranches
-        (uint256[] memory startTimes, uint256[] memory endTimes) = tranche.getScheduledTranches();
+        (uint256[] memory startTimes, uint256[] memory endTimes, ) = tranche.getScheduledTranches();
         
         // Should have existing 5 + new 3 = 8 scheduled (minus 1 for current = 7 waiting)
         // Actually: initial 6, start first uses 1, so 5 remaining. Add 3 = 8.
@@ -1241,15 +1250,15 @@ contract DonationTrancheTest is Test {
         tranche.startFirstTranche(block.timestamp);
         
         // Get the last scheduled tranche time to ensure new ones don't overlap
-        (uint256[] memory beforeTimes, ) = tranche.getScheduledTranches();
+        (uint256[] memory beforeTimes, , ) = tranche.getScheduledTranches();
         uint256 lastScheduled = beforeTimes[beforeTimes.length - 1];
         
         // Schedule tranches with explicit start time after last scheduled + 2 weeks
         uint256 explicitStart = lastScheduled + 2 weeks;
         vm.prank(admin);
-        tranche.scheduleAdditionalTranches(2, explicitStart);
+        tranche.scheduleAdditionalTranches(2, explicitStart, 0);
         
-        (uint256[] memory startTimes, ) = tranche.getScheduledTranches();
+        (uint256[] memory startTimes, , ) = tranche.getScheduledTranches();
         
         // Last two should start at explicitStart and explicitStart + 2 weeks
         uint256 len = startTimes.length;
@@ -1265,14 +1274,14 @@ contract DonationTrancheTest is Test {
         tranche.startFirstTranche(block.timestamp);
         
         // Get initial scheduled tranches
-        (uint256[] memory beforeTimes, ) = tranche.getScheduledTranches();
+        (uint256[] memory beforeTimes, , ) = tranche.getScheduledTranches();
         uint256 lastScheduled = beforeTimes[beforeTimes.length - 1];
         
         // Schedule more with 0 start - should continue from last scheduled
         vm.prank(admin);
-        tranche.scheduleAdditionalTranches(1, 0);
+        tranche.scheduleAdditionalTranches(1, 0, 0);
         
-        (uint256[] memory afterTimes, ) = tranche.getScheduledTranches();
+        (uint256[] memory afterTimes, , ) = tranche.getScheduledTranches();
         uint256 newlyScheduled = afterTimes[afterTimes.length - 1];
         
         // New tranche should start at lastScheduled + 2 weeks
@@ -1314,9 +1323,9 @@ contract DonationTrancheTest is Test {
         
         // Schedule 1 more - uses block.timestamp since all ended and queue empty
         vm.prank(admin);
-        tranche.scheduleAdditionalTranches(1, 0);
+        tranche.scheduleAdditionalTranches(1, 0, 0);
         
-        (uint256[] memory times, ) = tranche.getScheduledTranches();
+        (uint256[] memory times, , ) = tranche.getScheduledTranches();
         assertEq(times.length, 1);
         assertEq(times[0], currentTime); // Should use current timestamp
     }
@@ -1346,9 +1355,9 @@ contract DonationTrancheTest is Test {
         
         // Schedule more - should start from current time
         vm.prank(admin);
-        tranche.scheduleAdditionalTranches(2, 0);
+        tranche.scheduleAdditionalTranches(2, 0, 0);
         
-        (uint256[] memory times, ) = tranche.getScheduledTranches();
+        (uint256[] memory times, , ) = tranche.getScheduledTranches();
         assertEq(times[0], currentTime);
         assertEq(times[1], currentTime + 2 weeks);
     }
@@ -1383,7 +1392,7 @@ contract DonationTrancheTest is Test {
         
         vm.prank(admin);
         vm.expectRevert(DonationTranche.InvalidStartTime.selector);
-        tranche.scheduleAdditionalTranches(1, pastTime);
+        tranche.scheduleAdditionalTranches(1, pastTime, 0);
     }
     
     /**
@@ -1393,7 +1402,7 @@ contract DonationTrancheTest is Test {
         vm.prank(admin);
         tranche.startFirstTranche(block.timestamp);
         
-        (uint256[] memory startTimes, uint256[] memory endTimes) = tranche.getScheduledTranches();
+        (uint256[] memory startTimes, uint256[] memory endTimes, ) = tranche.getScheduledTranches();
         
         // Should have 5 scheduled (6 initial - 1 started)
         assertEq(startTimes.length, 5);
@@ -1403,6 +1412,222 @@ contract DonationTrancheTest is Test {
         for (uint256 i = 0; i < startTimes.length; i++) {
             assertEq(endTimes[i], startTimes[i] + 2 weeks);
         }
+    }
+    
+    // ============ Tranche Cap Tests ============
+    
+    /**
+     * @notice Test setDefaultTrancheCap changes default for new tranches
+     */
+    function test_SetDefaultTrancheCap() public {
+        uint256 newCap = 5000 ether;
+        
+        vm.prank(admin);
+        tranche.setDefaultTrancheCap(newCap);
+        
+        assertEq(tranche.defaultTrancheCap(), newCap);
+        
+        // Start first tranche - should use new cap
+        vm.prank(admin);
+        tranche.startFirstTranche(block.timestamp);
+        
+        (, , , uint256 cap, , , , , ) = tranche.getCurrentTranche();
+        assertEq(cap, newCap);
+    }
+    
+    /**
+     * @notice Test setTrancheCap updates specific tranche cap
+     */
+    function test_SetTrancheCap() public {
+        vm.prank(admin);
+        tranche.startFirstTranche(block.timestamp);
+        
+        uint256 newCap = 3000 ether;
+        
+        vm.prank(admin);
+        tranche.setTrancheCap(1, newCap);
+        
+        (, , , uint256 cap, , , , , ) = tranche.getCurrentTranche();
+        assertEq(cap, newCap);
+    }
+    
+    /**
+     * @notice Test setTrancheCap cannot set below totalDeposited
+     */
+    function test_RevertSetTrancheCapBelowDeposited() public {
+        vm.prank(admin);
+        tranche.startFirstTranche(block.timestamp);
+        
+        // Deposit 500 USDT
+        vm.prank(user1);
+        tranche.deposit(500 ether); // 500 + 500 match = 1000 deposited
+        
+        // Try to set cap below deposited amount
+        vm.prank(admin);
+        vm.expectRevert(DonationTranche.CapBelowDeposited.selector);
+        tranche.setTrancheCap(1, 500 ether);
+    }
+    
+    /**
+     * @notice Test setTrancheCap reverts for nonexistent tranche
+     */
+    function test_RevertSetTrancheCapNonexistent() public {
+        vm.prank(admin);
+        tranche.startFirstTranche(block.timestamp);
+        
+        vm.prank(admin);
+        vm.expectRevert(DonationTranche.TrancheNonexistant.selector);
+        tranche.setTrancheCap(99, 5000 ether);
+    }
+    
+    /**
+     * @notice Test scheduleAdditionalTranches with custom cap
+     */
+    function test_ScheduleTranchesWithCustomCap() public {
+        vm.prank(admin);
+        tranche.startFirstTranche(block.timestamp);
+        
+        uint256 customCap = 10000 ether;
+        
+        // Schedule 2 tranches with custom cap
+        vm.prank(admin);
+        tranche.scheduleAdditionalTranches(2, 0, customCap);
+        
+        // Get scheduled tranches info
+        (uint256[] memory startTimes, , uint256[] memory caps) = tranche.getScheduledTranches();
+        
+        // The last 2 should have custom cap
+        uint256 len = startTimes.length;
+        assertEq(caps[len - 1], customCap);
+        assertEq(caps[len - 2], customCap);
+    }
+    
+    /**
+     * @notice Test scheduleAdditionalTranches with 0 cap uses default
+     */
+    function test_ScheduleTranchesZeroCapUsesDefault() public {
+        vm.prank(admin);
+        tranche.startFirstTranche(block.timestamp);
+        
+        // Schedule with 0 cap (should use default)
+        vm.prank(admin);
+        tranche.scheduleAdditionalTranches(1, 0, 0);
+        
+        (uint256[] memory startTimes, , uint256[] memory caps) = tranche.getScheduledTranches();
+        
+        uint256 len = startTimes.length;
+        assertEq(caps[len - 1], 1584 ether); // INITIAL_TRANCHE_CAP (default)
+    }
+    
+    /**
+     * @notice Test new tranche uses scheduled cap
+     */
+    function test_NewTrancheUsesScheduledCap() public {
+        vm.prank(admin);
+        tranche.startFirstTranche(block.timestamp);
+        
+        // Schedule tranches with custom cap
+        uint256 customCap = 8000 ether;
+        vm.prank(admin);
+        tranche.scheduleAdditionalTranches(1, 0, customCap);
+        
+        // Progress through initial scheduled tranches
+        for (uint256 i = 1; i <= 5; i++) {
+            vm.prank(user1);
+            tranche.deposit(100 ether);
+            skip(2 weeks + 1);
+            tranche.collectTranche(i);
+        }
+        
+        // Last initial tranche
+        vm.prank(user1);
+        tranche.deposit(100 ether);
+        skip(2 weeks + 1);
+        tranche.collectTranche(6);
+        
+        // Next deposit should trigger the custom cap tranche
+        vm.prank(user1);
+        tranche.deposit(100 ether);
+        
+        (, , , uint256 cap, , , , , ) = tranche.getCurrentTranche();
+        assertEq(cap, customCap);
+    }
+    
+    // ============ Public Start Next Tranche Tests ============
+    
+    /**
+     * @notice Test anyone can call startNextTranche when conditions are met
+     */
+    function test_PublicStartNextTranche() public {
+        vm.prank(admin);
+        tranche.startFirstTranche(block.timestamp);
+        
+        // Make deposit and wait for tranche to end
+        vm.prank(user1);
+        tranche.deposit(100 ether);
+        
+        skip(2 weeks + 1);
+        tranche.collectTranche(1);
+        
+        // Anyone can start next tranche (not just admin)
+        vm.prank(user2); // Regular user, not admin
+        tranche.startNextTranche();
+        
+        assertEq(tranche.currentTrancheId(), 2);
+    }
+    
+    /**
+     * @notice Test startNextTranche respects scheduled time for non-admin
+     */
+    function test_PublicStartNextTrancheRespectsScheduledTime() public {
+        vm.prank(admin);
+        tranche.startFirstTranche(block.timestamp);
+        
+        // Fill and collect tranche 1
+        vm.prank(user1);
+        tranche.deposit(1584 ether); // Fill completely
+        
+        tranche.collectTranche(1);
+        
+        // Tranche 2 is scheduled to start at tranche 1's end time
+        // Since we collected early (before 2 weeks), scheduled time hasn't arrived
+        // Regular user should not be able to start early
+        vm.prank(user2);
+        vm.expectRevert(DonationTranche.ScheduledTimeNotReached.selector);
+        tranche.startNextTranche();
+        
+        // Wait until scheduled time
+        skip(2 weeks);
+        
+        // Now anyone can start
+        vm.prank(user2);
+        tranche.startNextTranche();
+        
+        assertEq(tranche.currentTrancheId(), 2);
+    }
+    
+    /**
+     * @notice Test admin can still start early with adminStartNextTranche
+     */
+    function test_AdminCanStartTrancheEarly() public {
+        vm.prank(admin);
+        tranche.startFirstTranche(block.timestamp);
+        
+        // Fill and collect tranche 1 early
+        vm.prank(user1);
+        tranche.deposit(1584 ether);
+        
+        tranche.collectTranche(1);
+        
+        // Admin can start early
+        vm.prank(admin);
+        tranche.adminStartNextTranche();
+        
+        assertEq(tranche.currentTrancheId(), 2);
+        
+        // Verify it started at current time (early)
+        (, uint256 startTime, , , , , , , ) = tranche.getCurrentTranche();
+        assertEq(startTime, block.timestamp);
     }
     
     // ============ Early Collection Tests ============
@@ -1579,7 +1804,7 @@ contract DonationTrancheTest is Test {
         
         // Schedule more
         vm.prank(admin);
-        tranche.scheduleAdditionalTranches(3, 0);
+        tranche.scheduleAdditionalTranches(3, 0, 0);
         
         assertEq(tranche.scheduledTrancheCount(), 8);
     }

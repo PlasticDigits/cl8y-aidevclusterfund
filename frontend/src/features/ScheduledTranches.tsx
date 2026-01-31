@@ -1,5 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { toast } from 'sonner';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { ADDRESSES } from '@/lib/config';
+import { DonationTrancheABI } from '@/lib/abi/DonationTranche';
 
 interface ScheduledTrancheData {
   startTime: number;
@@ -9,6 +14,7 @@ interface ScheduledTrancheData {
 interface Props {
   currentTrancheId: number;
   scheduledTranches: ScheduledTrancheData[];
+  onTrancheStarted?: () => void;
 }
 
 function formatCountdown(seconds: number) {
@@ -40,8 +46,9 @@ function formatDate(timestamp: number) {
   });
 }
 
-export function ScheduledTranches({ currentTrancheId, scheduledTranches }: Props) {
+export function ScheduledTranches({ currentTrancheId, scheduledTranches, onTrancheStarted }: Props) {
   const [now, setNow] = useState(() => Date.now() / 1000);
+  const trancheAddress = ADDRESSES.DONATION_TRANCHE;
   
   // Live-updating countdown
   useEffect(() => {
@@ -50,10 +57,80 @@ export function ScheduledTranches({ currentTrancheId, scheduledTranches }: Props
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Check if current tranche is collected (required before starting next)
+  const { data: currentTrancheData } = useReadContract({
+    address: trancheAddress,
+    abi: DonationTrancheABI,
+    functionName: 'getCurrentTranche',
+    query: { enabled: !!trancheAddress },
+  });
+
+  // Parse current tranche to check if collected
+  const currentTranche = currentTrancheData ? {
+    collected: (currentTrancheData as readonly [bigint, bigint, bigint, bigint, bigint, bigint, boolean, boolean, bigint])[7],
+    isActive: (currentTrancheData as readonly [bigint, bigint, bigint, bigint, bigint, bigint, boolean, boolean, bigint])[6],
+  } : null;
+
+  // Write contract hook for starting next tranche
+  const {
+    writeContract: startNextTranche,
+    data: startTxHash,
+    isPending: isStartPending,
+    error: startError,
+  } = useWriteContract();
+
+  // Transaction receipt
+  const { isSuccess: startSuccess } = useWaitForTransactionReceipt({ hash: startTxHash });
+
+  // Handle errors
+  useEffect(() => {
+    if (startError) {
+      toast.error('Failed to start tranche', { description: startError.message.slice(0, 100) });
+    }
+  }, [startError]);
+
+  // Track previous success state to detect transitions
+  const prevStartSuccess = useRef(false);
+
+  // Handle success
+  const handleStartSuccess = useCallback(() => {
+    toast.success('Tranche started successfully!');
+    onTrancheStarted?.();
+  }, [onTrancheStarted]);
+
+  useEffect(() => {
+    if (startSuccess && !prevStartSuccess.current) {
+      queueMicrotask(handleStartSuccess);
+    }
+    prevStartSuccess.current = startSuccess;
+  }, [startSuccess, handleStartSuccess]);
+
+  // Handler to start the next tranche
+  const handleStartTranche = () => {
+    if (!trancheAddress) return;
+    startNextTranche({
+      address: trancheAddress,
+      abi: DonationTrancheABI,
+      functionName: 'startNextTranche',
+    });
+  };
   
   if (scheduledTranches.length === 0) {
     return null;
   }
+
+  // Check if the first scheduled tranche can be started
+  // Show Start button when:
+  // 1. Current tranche is collected, AND
+  // 2. Browser time has passed scheduled start time OR current tranche is not active (ended)
+  // Note: The contract will validate that blockchain time has passed the scheduled time.
+  // We use isActive as a proxy for whether blockchain time has passed the current tranche end time.
+  const firstTranche = scheduledTranches[0];
+  const timeUntilFirstStart = firstTranche.startTime - now;
+  const browserTimeReady = timeUntilFirstStart <= 0;
+  const currentTrancheEnded = currentTranche?.isActive === false;
+  const canStartNext = currentTranche?.collected === true && (browserTimeReady || currentTrancheEnded);
 
   return (
     <Card>
@@ -69,14 +146,20 @@ export function ScheduledTranches({ currentTrancheId, scheduledTranches }: Props
             const trancheNumber = currentTrancheId + index + 1;
             const timeUntilStart = tranche.startTime - now;
             const isStartingSoon = timeUntilStart <= 86400 && timeUntilStart > 0; // Within 24 hours
+            const isReadyToStart = timeUntilStart <= 0;
+            const isFirstAndCanStart = index === 0 && canStartNext;
             
             return (
               <div 
                 key={index}
                 className={`flex items-center justify-between p-3 rounded-lg ${
-                  isStartingSoon 
-                    ? 'bg-[var(--gold)]/10 border border-[var(--gold)]/30' 
-                    : 'bg-[var(--charcoal)]'
+                  isFirstAndCanStart
+                    ? 'bg-[var(--gold)]/20 border border-[var(--gold)]/50'
+                    : isStartingSoon 
+                      ? 'bg-[var(--gold)]/10 border border-[var(--gold)]/30' 
+                      : isReadyToStart
+                        ? 'bg-[var(--aqua)]/10 border border-[var(--aqua)]/30'
+                        : 'bg-[var(--charcoal)]'
                 }`}
               >
                 <div>
@@ -87,13 +170,35 @@ export function ScheduledTranches({ currentTrancheId, scheduledTranches }: Props
                     {formatDate(tranche.startTime)} - {formatDate(tranche.endTime)}
                   </p>
                 </div>
-                <div className="text-right">
-                  <p className="text-xs text-[var(--text-muted)]">
-                    {timeUntilStart > 0 ? 'Starts in' : 'Started'}
-                  </p>
-                  <p className={`font-mono ${isStartingSoon ? 'text-[var(--gold)]' : 'text-[var(--text-secondary)]'}`}>
-                    {formatCountdown(timeUntilStart)}
-                  </p>
+                <div className="text-right flex items-center gap-3">
+                  {isFirstAndCanStart ? (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handleStartTranche}
+                      disabled={isStartPending}
+                    >
+                      {isStartPending ? 'Starting...' : 'Start Tranche'}
+                    </Button>
+                  ) : isReadyToStart && index === 0 ? (
+                    <div>
+                      <p className="text-xs text-[var(--text-muted)]">
+                        Waiting for collection
+                      </p>
+                      <p className="text-[var(--aqua)] font-mono text-sm">
+                        Ready to start
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-xs text-[var(--text-muted)]">
+                        {timeUntilStart > 0 ? 'Starts in' : 'Ready'}
+                      </p>
+                      <p className={`font-mono ${isStartingSoon ? 'text-[var(--gold)]' : 'text-[var(--text-secondary)]'}`}>
+                        {formatCountdown(timeUntilStart)}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             );

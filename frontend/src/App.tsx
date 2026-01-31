@@ -47,12 +47,18 @@ function Dashboard() {
   });
 
   // Read scheduled tranches
-  const { data: scheduledData } = useReadContract({
+  const { data: scheduledData, refetch: refetchScheduled } = useReadContract({
     address: trancheAddress,
     abi: DonationTrancheABI,
     functionName: 'getScheduledTranches',
     query: { enabled: !!trancheAddress },
   });
+
+  // Handler for when a new tranche is started
+  const handleTrancheStarted = () => {
+    refetchTranche();
+    refetchScheduled();
+  };
 
   // Parse scheduled tranches
   type ScheduledResult = readonly [readonly bigint[], readonly bigint[]];
@@ -186,6 +192,7 @@ function Dashboard() {
                 <ScheduledTranches
                   currentTrancheId={displayTranche?.id || 0}
                   scheduledTranches={scheduledTranches}
+                  onTrancheStarted={handleTrancheStarted}
                 />
               </CompactErrorBoundary>
             )}

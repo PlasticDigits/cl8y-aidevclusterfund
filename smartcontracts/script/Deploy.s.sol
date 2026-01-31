@@ -4,6 +4,7 @@ pragma solidity ^0.8.30;
 import "forge-std/Script.sol";
 import "../src/DonationTranche.sol";
 import "../src/DonationMatchVault.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract DeployScript is Script {
     // BSC Addresses
@@ -17,21 +18,36 @@ contract DeployScript is Script {
         
         vm.startBroadcast(deployerPrivateKey);
 
-        // Deploy Vault first
+        // 1. Deploy Vault first (not proxied - simple contract)
         DonationMatchVault vault = new DonationMatchVault(
             VAULT_OWNER,
             USDT
         );
         console.log("DonationMatchVault deployed at:", address(vault));
 
-        // Deploy DonationTranche
-        DonationTranche tranche = new DonationTranche(
+        // 2. Deploy DonationTranche implementation
+        DonationTranche trancheImplementation = new DonationTranche();
+        console.log("DonationTranche implementation deployed at:", address(trancheImplementation));
+
+        // 3. Encode initialization data
+        bytes memory initData = abi.encodeWithSelector(
+            DonationTranche.initialize.selector,
             ACCESS_MANAGER,
             USDT,
             CLUSTER_MANAGER,
             address(vault)
         );
-        console.log("DonationTranche deployed at:", address(tranche));
+
+        // 4. Deploy ERC1967 proxy pointing to implementation
+        ERC1967Proxy proxy = new ERC1967Proxy(
+            address(trancheImplementation),
+            initData
+        );
+        console.log("DonationTranche proxy deployed at:", address(proxy));
+
+        // Cast proxy to DonationTranche interface for verification
+        DonationTranche tranche = DonationTranche(address(proxy));
+        console.log("Tranche initialized - nextTokenId:", tranche.nextTokenId());
 
         vm.stopBroadcast();
 
@@ -42,14 +58,19 @@ contract DeployScript is Script {
         console.log("2. IMPORTANT: Vault must approve tranche BEFORE any deposits can be matched!");
         console.log("   Vault owner calls:");
         console.log("   vault.approveUsdt(");
-        console.log("     ", address(tranche), ",");
+        console.log("     ", address(proxy), ",");
         console.log("     type(uint256).max");
         console.log("   )");
         console.log("");
         console.log("3. Admin must call tranche.startFirstTranche() via AccessManager");
         console.log("");
         console.log("4. Update frontend .env:");
-        console.log("   VITE_DONATION_TRANCHE_ADDRESS=", address(tranche));
+        console.log("   VITE_DONATION_TRANCHE_ADDRESS=", address(proxy));
         console.log("   VITE_DONATION_VAULT_ADDRESS=", address(vault));
+        console.log("");
+        console.log("=== Upgrade Information ===");
+        console.log("Implementation:", address(trancheImplementation));
+        console.log("Proxy:", address(proxy));
+        console.log("To upgrade, deploy new implementation and call proxy.upgradeToAndCall()");
     }
 }

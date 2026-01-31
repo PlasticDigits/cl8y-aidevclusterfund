@@ -1,46 +1,56 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.30;
 
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721EnumerableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/manager/AccessManagedUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import {DoubleEndedQueue} from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
 
 /**
  * @title DonationTranche
  * @notice Manages 2-week fundraising tranches with NFT donation notes
  * @dev Each NFT represents a donation with fixed APR rewards
+ *      Deployed behind an ERC-1967 UUPS proxy for upgradeability
  */
-contract DonationTranche is ERC721Enumerable, AccessManaged {
+contract DonationTranche is 
+    Initializable,
+    ERC721EnumerableUpgradeable, 
+    AccessManagedUpgradeable,
+    UUPSUpgradeable 
+{
     using SafeERC20 for IERC20;
     using DoubleEndedQueue for DoubleEndedQueue.Bytes32Deque;
 
     // ============ Constants ============
     
     uint256 public constant TRANCHE_DURATION = 2 weeks;
-    uint256 public constant DEFAULT_TRANCHE_CAP = 1584 ether; // 1584 USDT (18 decimals)
+    uint256 public constant INITIAL_TRANCHE_CAP = 1584 ether; // 1584 USDT (18 decimals)
     uint256 public constant MIN_DEPOSIT = 100 ether; // 100 USDT
     uint256 public constant DUST_THRESHOLD = 1 ether; // 1 USDT
     uint256 public constant SECONDS_PER_YEAR = 365 days;
     uint256 public constant BASIS_POINTS = 10000;
     
-    // ============ Immutables ============
+    // ============ Storage Variables ============
+    // Note: Order matters for upgrade compatibility. Only append new variables.
     
-    IERC20 public immutable usdt;
-    address public immutable clusterManager;
-    
-    // ============ State Variables ============
-    
+    IERC20 public usdt;
+    address public clusterManager;
     address public vault;
-    uint256 public defaultAprBps = 3000; // 30% = 3000 basis points
-    uint256 public nextTokenId = 1;
+    uint256 public defaultAprBps;
+    uint256 public nextTokenId;
     uint256 public currentTrancheId;
     bool public firstTrancheStarted;
+    uint256 public defaultTrancheCap;
     
     /// @dev Queue of scheduled tranche start times (stored as bytes32, cast to uint256)
     DoubleEndedQueue.Bytes32Deque internal _scheduledStartTimes;
+    
+    /// @dev Queue of scheduled tranche caps (parallel to _scheduledStartTimes)
+    DoubleEndedQueue.Bytes32Deque internal _scheduledCaps;
     
     // ============ Structs ============
     
@@ -71,6 +81,11 @@ contract DonationTranche is ERC721Enumerable, AccessManaged {
     mapping(uint256 => Tranche) public tranches;
     mapping(uint256 => Note) public notes;
     
+    // ============ Storage Gap ============
+    // Reserve storage slots for future upgrades
+    // Reduce this gap when adding new state variables
+    uint256[47] private __gap;
+    
     // ============ Events ============
     
     event TrancheStarted(uint256 indexed trancheId, uint256 startTime, uint256 endTime, uint256 cap);
@@ -81,6 +96,8 @@ contract DonationTranche is ERC721Enumerable, AccessManaged {
     event VaultUpdated(address indexed oldVault, address indexed newVault);
     event DefaultAprUpdated(uint256 oldApr, uint256 newApr);
     event TranchesScheduled(uint256 count, uint256 totalScheduled);
+    event DefaultTrancheCapUpdated(uint256 oldCap, uint256 newCap);
+    event TrancheCapUpdated(uint256 indexed trancheId, uint256 oldCap, uint256 newCap);
     
     // ============ Errors ============
     
@@ -99,24 +116,57 @@ contract DonationTranche is ERC721Enumerable, AccessManaged {
     error TrancheFull();
     error InvalidStartTime();
     error TrancheNonexistant();
+    error ScheduledTimeNotReached();
+    error CapBelowDeposited();
     
     // ============ Constructor ============
     
-    constructor(
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+    
+    // ============ Initializer ============
+    
+    /**
+     * @notice Initialize the contract (replaces constructor for proxy pattern)
+     * @param _authority AccessManager address for access control
+     * @param _usdt USDT token address
+     * @param _clusterManager Address to receive collected tranche funds
+     * @param _vault Vault address for matching funds
+     */
+    function initialize(
         address _authority,
         address _usdt,
         address _clusterManager,
         address _vault
-    ) ERC721("CL8Y Donation Note", "CL8Y-DN") AccessManaged(_authority) {
+    ) external initializer {
+        __ERC721_init("CL8Y Donation Note", "CL8Y-DN");
+        __ERC721Enumerable_init();
+        __AccessManaged_init(_authority);
+        // Note: UUPSUpgradeable is stateless and has no initializer
+        
         usdt = IERC20(_usdt);
         clusterManager = _clusterManager;
         vault = _vault;
+        defaultAprBps = 3000; // 30% = 3000 basis points
+        defaultTrancheCap = INITIAL_TRANCHE_CAP;
+        nextTokenId = 1;
         
         // Initialize 6 placeholder entries (actual times set in startFirstTranche)
         for (uint256 i = 0; i < 6; i++) {
             _scheduledStartTimes.pushBack(bytes32(0));
+            _scheduledCaps.pushBack(bytes32(0)); // 0 means use defaultTrancheCap
         }
     }
+    
+    // ============ UUPS Upgrade Authorization ============
+    
+    /**
+     * @notice Authorize contract upgrades (restricted to admin)
+     * @dev Required by UUPSUpgradeable. Uses AccessManaged for authorization.
+     */
+    function _authorizeUpgrade(address newImplementation) internal override restricted {}
     
     // ============ Admin Functions ============
     
@@ -136,6 +186,7 @@ contract DonationTranche is ERC721Enumerable, AccessManaged {
         // Get the count of scheduled tranches (including first one) and clear placeholders
         uint256 totalScheduled = _scheduledStartTimes.length();
         _scheduledStartTimes.clear();
+        _scheduledCaps.clear();
         
         // Create tranche 1 directly (not using _startNewTrancheAt since queue is empty)
         currentTrancheId = 1;
@@ -143,7 +194,7 @@ contract DonationTranche is ERC721Enumerable, AccessManaged {
         tranche.id = 1;
         tranche.startTime = startTimestamp;
         tranche.endTime = startTimestamp + TRANCHE_DURATION;
-        tranche.cap = DEFAULT_TRANCHE_CAP;
+        tranche.cap = defaultTrancheCap;
         
         emit TrancheStarted(1, startTimestamp, tranche.endTime, tranche.cap);
         
@@ -151,42 +202,61 @@ contract DonationTranche is ERC721Enumerable, AccessManaged {
         uint256 baseTime = startTimestamp + TRANCHE_DURATION;
         for (uint256 i = 0; i < totalScheduled - 1; i++) {
             _scheduledStartTimes.pushBack(bytes32(baseTime + (i * TRANCHE_DURATION)));
+            _scheduledCaps.pushBack(bytes32(0)); // 0 means use defaultTrancheCap
         }
     }
     
     /**
-     * @notice Start the next tranche after a gap in fundraising
-     * @dev Called when all previous tranches expired and were collected, 
-     *      and new tranches have been scheduled. Generally not needed as
-     *      tranches auto-progress on deposit, but can be used to manually start.
+     * @notice Start the next tranche when scheduled time has arrived
+     * @dev Public function that anyone can call to start the next tranche.
+     *      Requires the scheduled start time to have been reached.
+     *      Use adminStartNextTranche() to start early (admin only).
      */
-    function startNextTranche() external restricted {
+    function startNextTranche() external {
         if (!firstTrancheStarted) revert FirstTrancheNotStarted();
         if (_scheduledStartTimes.empty()) revert NoTranchesScheduled();
         
-        // Verify current tranche is ended and collected
+        // Verify current tranche is ended (by time or collection) and collected
         Tranche storage current = tranches[currentTrancheId];
-        if (current.endTime > 0 && block.timestamp < current.endTime) revert TrancheStillActive();
+        // Tranche is still active if: has endTime, time hasn't passed, AND not yet collected
+        if (current.endTime > 0 && block.timestamp < current.endTime && !current.collected) revert TrancheStillActive();
         if (current.endTime > 0 && !current.collected) revert PreviousTrancheNotCollected();
         
-        // Get the next scheduled start time
+        // Get the next scheduled start time - must be reached
         uint256 nextStart = uint256(_scheduledStartTimes.front());
-        // If scheduled time is in the future, use current time (admin override)
-        if (nextStart > block.timestamp) {
-            nextStart = block.timestamp;
-        }
+        if (block.timestamp < nextStart) revert ScheduledTimeNotReached();
         
         _startNewTrancheAt(nextStart);
+    }
+    
+    /**
+     * @notice Admin function to start the next tranche early (before scheduled time)
+     * @dev Allows admin to override the scheduled start time and start immediately.
+     */
+    function adminStartNextTranche() external restricted {
+        if (!firstTrancheStarted) revert FirstTrancheNotStarted();
+        if (_scheduledStartTimes.empty()) revert NoTranchesScheduled();
+        
+        // Verify current tranche is ended (by time or collection) and collected
+        Tranche storage current = tranches[currentTrancheId];
+        // Tranche is still active if: has endTime, time hasn't passed, AND not yet collected
+        if (current.endTime > 0 && block.timestamp < current.endTime && !current.collected) revert TrancheStillActive();
+        if (current.endTime > 0 && !current.collected) revert PreviousTrancheNotCollected();
+        
+        // Start at current time (admin override)
+        _startNewTrancheAt(block.timestamp);
     }
     
     /**
      * @notice Schedule additional tranches
      * @param count Number of tranches to add
      * @param startOverride Start time for first new tranche (0 = auto-calculate based on existing schedule)
+     * @param capOverride Custom cap for these tranches (0 = use defaultTrancheCap)
      */
     function scheduleAdditionalTranches(
         uint256 count, 
-        uint256 startOverride
+        uint256 startOverride,
+        uint256 capOverride
     ) external restricted {
         // Calculate base start time for first new tranche
         uint256 baseTime;
@@ -194,7 +264,7 @@ contract DonationTranche is ERC721Enumerable, AccessManaged {
             // Explicit start time provided - must be now or in future
             if (startOverride < block.timestamp) revert InvalidStartTime();
             // If pending tranches, do not allow scheduling new tranches before the last one ends
-            if (uint256(_scheduledStartTimes.back()) > startOverride + TRANCHE_DURATION) revert InvalidStartTime();
+            if (!_scheduledStartTimes.empty() && uint256(_scheduledStartTimes.back()) > startOverride + TRANCHE_DURATION) revert InvalidStartTime();
             baseTime = startOverride;
         } else if (!_scheduledStartTimes.empty()) {
             // Have pending scheduled tranches - continue from last one
@@ -212,8 +282,35 @@ contract DonationTranche is ERC721Enumerable, AccessManaged {
         
         for (uint256 i = 0; i < count; i++) {
             _scheduledStartTimes.pushBack(bytes32(baseTime + (i * TRANCHE_DURATION)));
+            _scheduledCaps.pushBack(bytes32(capOverride)); // 0 means use defaultTrancheCap
         }
         emit TranchesScheduled(count, _scheduledStartTimes.length());
+    }
+    
+    /**
+     * @notice Update the default tranche cap for new tranches
+     * @param newCap New default cap amount
+     */
+    function setDefaultTrancheCap(uint256 newCap) external restricted {
+        uint256 oldCap = defaultTrancheCap;
+        defaultTrancheCap = newCap;
+        emit DefaultTrancheCapUpdated(oldCap, newCap);
+    }
+    
+    /**
+     * @notice Update the cap for a specific tranche
+     * @dev Cannot set cap below the current totalDeposited
+     * @param trancheId The tranche to update
+     * @param newCap New cap amount
+     */
+    function setTrancheCap(uint256 trancheId, uint256 newCap) external restricted {
+        Tranche storage tranche = tranches[trancheId];
+        if (tranche.endTime == 0 && tranche.cap == 0) revert TrancheNonexistant();
+        if (newCap < tranche.totalDeposited) revert CapBelowDeposited();
+        
+        uint256 oldCap = tranche.cap;
+        tranche.cap = newCap;
+        emit TrancheCapUpdated(trancheId, oldCap, newCap);
     }
     
     /**
@@ -554,22 +651,28 @@ contract DonationTranche is ERC721Enumerable, AccessManaged {
     }
     
     /**
-     * @notice Get all scheduled tranche times
+     * @notice Get all scheduled tranche times and caps
      * @return startTimes Array of scheduled start timestamps
      * @return endTimes Array of scheduled end timestamps (start + TRANCHE_DURATION)
+     * @return caps Array of scheduled caps (0 means defaultTrancheCap will be used)
      */
     function getScheduledTranches() external view returns (
         uint256[] memory startTimes,
-        uint256[] memory endTimes
+        uint256[] memory endTimes,
+        uint256[] memory caps
     ) {
         uint256 len = _scheduledStartTimes.length();
         startTimes = new uint256[](len);
         endTimes = new uint256[](len);
+        caps = new uint256[](len);
         
         for (uint256 i = 0; i < len; i++) {
             uint256 startTime = uint256(_scheduledStartTimes.at(i));
+            uint256 scheduledCap = uint256(_scheduledCaps.at(i));
             startTimes[i] = startTime;
             endTimes[i] = startTime + TRANCHE_DURATION;
+            // Return actual cap that will be used
+            caps[i] = scheduledCap > 0 ? scheduledCap : defaultTrancheCap;
         }
     }
     
@@ -617,15 +720,19 @@ contract DonationTranche is ERC721Enumerable, AccessManaged {
     function _startNewTrancheAt(uint256 startTimestamp) internal {
         if (_scheduledStartTimes.empty()) revert NoTranchesScheduled();
         
-        // Pop first scheduled time from queue - O(1) operation
+        // Pop first scheduled time and cap from queues - O(1) operations
         _scheduledStartTimes.popFront();
+        uint256 scheduledCap = uint256(_scheduledCaps.popFront());
+        
+        // Use scheduled cap if set, otherwise use default
+        uint256 trancheCap = scheduledCap > 0 ? scheduledCap : defaultTrancheCap;
         
         currentTrancheId++;
         Tranche storage tranche = tranches[currentTrancheId];
         tranche.id = currentTrancheId;
         tranche.startTime = startTimestamp;
         tranche.endTime = startTimestamp + TRANCHE_DURATION;
-        tranche.cap = DEFAULT_TRANCHE_CAP;
+        tranche.cap = trancheCap;
         
         emit TrancheStarted(currentTrancheId, startTimestamp, tranche.endTime, tranche.cap);
     }
@@ -734,7 +841,7 @@ contract DonationTranche is ERC721Enumerable, AccessManaged {
     /**
      * @notice Override supportsInterface for ERC721Enumerable compatibility
      */
-    function supportsInterface(bytes4 interfaceId) public view override(ERC721Enumerable) returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public view override(ERC721EnumerableUpgradeable) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 }
