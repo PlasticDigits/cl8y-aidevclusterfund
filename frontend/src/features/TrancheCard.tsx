@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useConnect } from 'wagmi';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Button } from '@/components/ui/Button';
@@ -38,6 +39,7 @@ function formatCountdown(seconds: number) {
 
 export function TrancheCard({ tranche, onDeposit, isConnected }: Props) {
   const [now, setNow] = useState(() => Date.now() / 1000);
+  const { connect, connectors, isPending: isConnecting } = useConnect();
   
   // Live-updating countdown
   useEffect(() => {
@@ -46,6 +48,27 @@ export function TrancheCard({ tranche, onDeposit, isConnected }: Props) {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Handle connect wallet button - prefer injected, fallback to WalletConnect
+  const handleConnectWallet = () => {
+    // Find injected wallet (MetaMask, etc.)
+    const injectedConnector = connectors.find(c => c.type === 'injected');
+    // Find WalletConnect as fallback
+    const walletConnectConnector = connectors.find(c => c.type === 'walletConnect');
+    // Find mock connector for test mode
+    const mockConnector = connectors.find(c => c.type === 'mock');
+    
+    if (injectedConnector) {
+      // Prefer injected wallet if available
+      connect({ connector: injectedConnector });
+    } else if (walletConnectConnector) {
+      // Fallback to WalletConnect QR code
+      connect({ connector: walletConnectConnector });
+    } else if (mockConnector) {
+      // Use mock in test mode if no other options
+      connect({ connector: mockConnector });
+    }
+  };
   
   if (!tranche) {
     return (
@@ -199,7 +222,8 @@ export function TrancheCard({ tranche, onDeposit, isConnected }: Props) {
                   variant="secondary"
                   size="lg"
                   className="w-full animate-bob"
-                  onClick={onDeposit}
+                  onClick={handleConnectWallet}
+                  isLoading={isConnecting}
                 >
                   Connect Wallet to Contribute
                 </Button>

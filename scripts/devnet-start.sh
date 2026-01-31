@@ -56,7 +56,7 @@ DEPLOY_OUTPUT=$(forge script script/DeployLocal.s.sol --rpc-url http://localhost
 # Parse deployed addresses from output
 USDT_ADDR=$(echo "$DEPLOY_OUTPUT" | grep "MockUSDT deployed at:" | awk '{print $NF}')
 VAULT_ADDR=$(echo "$DEPLOY_OUTPUT" | grep "Vault deployed at:" | awk '{print $NF}')
-TRANCHE_ADDR=$(echo "$DEPLOY_OUTPUT" | grep "Tranche deployed at:" | awk '{print $NF}')
+TRANCHE_ADDR=$(echo "$DEPLOY_OUTPUT" | grep "Tranche proxy deployed at:" | awk '{print $NF}')
 
 if [ -z "$TRANCHE_ADDR" ]; then
   echo "Error: Could not parse contract addresses from deployment output"
