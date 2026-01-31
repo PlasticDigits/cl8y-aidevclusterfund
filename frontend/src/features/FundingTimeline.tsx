@@ -7,6 +7,9 @@ interface Props {
 
 export function FundingTimeline({ totalRaised }: Props) {
   const percentage = (totalRaised / TOTAL_FUNDING_TARGET) * 100;
+  // Total funding = community (1x) + CZodiac match (1x) + Ceramic services (1.5x) = 3.5x
+  const totalFundingRaised = totalRaised * 3.5;
+  const totalFundingTarget = TOTAL_FUNDING_TARGET * 3.5;
 
   return (
     <Card>
@@ -21,11 +24,14 @@ export function FundingTimeline({ totalRaised }: Props) {
         {/* Overall progress */}
         <div className="mb-8">
           <div className="flex justify-between text-sm mb-2">
-            <span className="text-[var(--text-secondary)]">Total Raised</span>
+            <span className="text-[var(--text-secondary)]">Total Funding</span>
             <span className="font-mono text-[var(--gold)]">
-              ${totalRaised.toLocaleString()} / ${TOTAL_FUNDING_TARGET.toLocaleString()}
+              ${totalFundingRaised.toLocaleString()} / ${totalFundingTarget.toLocaleString()}
             </span>
           </div>
+          <p className="text-xs text-[var(--text-muted)] mb-2">
+            Includes community donations, CZodiac 1:1 matching, and Ceramic 1.5x services
+          </p>
           <div className="h-4 bg-[var(--charcoal)] rounded-full overflow-hidden relative">
             <div
               className="h-full bg-gradient-to-r from-[var(--gold-dark)] to-[var(--gold)] transition-all duration-500"
@@ -87,16 +93,14 @@ export function FundingTimeline({ totalRaised }: Props) {
                       >
                         {milestone.name}
                       </h4>
-                      <div className="flex gap-4 mt-1 text-xs text-[var(--text-muted)]">
-                        <span>AI: ${milestone.aiCost.toLocaleString()}</span>
-                        <span>QA: ${milestone.qaCost.toLocaleString()}</span>
-                        <span>{milestone.leadTimeDays} days</span>
-                      </div>
+                      <p className="mt-1 text-xs text-[var(--text-muted)]">
+                        {milestone.leadTimeDays} days
+                      </p>
                     </div>
                   </div>
                   <div className="text-right">
                     <p className="font-mono text-sm text-[var(--text-secondary)]">
-                      ${milestone.cumulativeTotal.toLocaleString()}
+                      ${(milestone.cumulativeTotal * 3.5).toLocaleString()}
                     </p>
                   </div>
                 </div>
