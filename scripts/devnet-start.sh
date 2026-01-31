@@ -28,7 +28,7 @@ command -v jq >/dev/null 2>&1 || { echo "Error: jq not found. Install jq first."
 
 # Start Anvil with 1-second block time
 echo "Starting Anvil..."
-anvil --block-time 1 > "$SCRIPT_DIR/.anvil.log" 2>&1 &
+anvil --block-time 1 --host 0.0.0.0 > "$SCRIPT_DIR/.anvil.log" 2>&1 &
 ANVIL_PID=$!
 sleep 2
 
@@ -75,8 +75,10 @@ echo "Starting frontend..."
 cd "$PROJECT_ROOT/frontend"
 
 # Write env file for frontend
+# USE_REAL_WALLET allows connecting browser wallets instead of mock
 cat > .env.local << EOF
 VITE_TEST_MODE=true
+VITE_USE_REAL_WALLET=true
 VITE_DONATION_TRANCHE_ADDRESS=$TRANCHE_ADDR
 VITE_DONATION_VAULT_ADDRESS=$VAULT_ADDR
 VITE_USDT_ADDRESS=$USDT_ADDR

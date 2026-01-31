@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { useAccount, useReadContract, useReadContracts } from 'wagmi';
+import { useAccount, useReadContract, useReadContracts, useBlockNumber } from 'wagmi';
 import { formatUnits } from 'viem';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
+import { TokenIcon } from '@/components/ui/TokenIcon';
 import { ADDRESSES } from '@/lib/config';
 import { DonationTrancheABI } from '@/lib/abi/DonationTranche';
 
@@ -22,29 +22,39 @@ export function PortfolioSummary() {
   const { address, isConnected } = useAccount();
   const trancheAddress = ADDRESSES.DONATION_TRANCHE;
 
-  // Get balance of notes
+  // Watch for new blocks to trigger refetches
+  useBlockNumber({ watch: true });
+
+  // Get balance of notes with refetch on block changes
   const { data: noteBalance } = useReadContract({
     address: trancheAddress,
     abi: DonationTrancheABI,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
-    query: { enabled: !!address && !!trancheAddress },
+    query: { 
+      enabled: !!address && !!trancheAddress,
+      refetchInterval: 3000, // Poll every 3 seconds
+    },
   });
 
   const noteCount = noteBalance ? Number(noteBalance) : 0;
 
   // Build contract calls for token IDs
-  const tokenIdCalls = Array.from({ length: noteCount }, (_, index) => ({
-    address: trancheAddress!,
-    abi: DonationTrancheABI,
-    functionName: 'tokenOfOwnerByIndex' as const,
-    args: [address!, BigInt(index)] as const,
-  }));
+  const tokenIdCalls = useMemo(() => 
+    Array.from({ length: noteCount }, (_, index) => ({
+      address: trancheAddress!,
+      abi: DonationTrancheABI,
+      functionName: 'tokenOfOwnerByIndex' as const,
+      args: [address!, BigInt(index)] as const,
+    })), [noteCount, trancheAddress, address]);
 
   // Fetch all token IDs
   const { data: tokenIdResults } = useReadContracts({
     contracts: tokenIdCalls,
-    query: { enabled: noteCount > 0 && !!address && !!trancheAddress },
+    query: { 
+      enabled: noteCount > 0 && !!address && !!trancheAddress,
+      refetchInterval: 3000,
+    },
   });
 
   // Extract token IDs from results - memoized to avoid dependency changes
@@ -55,17 +65,21 @@ export function PortfolioSummary() {
   }, [tokenIdResults]);
 
   // Build contract calls for note info
-  const noteInfoCalls = tokenIds.map(tokenId => ({
-    address: trancheAddress!,
-    abi: DonationTrancheABI,
-    functionName: 'getNoteInfo' as const,
-    args: [tokenId] as const,
-  }));
+  const noteInfoCalls = useMemo(() => 
+    tokenIds.map(tokenId => ({
+      address: trancheAddress!,
+      abi: DonationTrancheABI,
+      functionName: 'getNoteInfo' as const,
+      args: [tokenId] as const,
+    })), [tokenIds, trancheAddress]);
 
   // Fetch all note info
   const { data: noteInfoResults, isLoading } = useReadContracts({
     contracts: noteInfoCalls,
-    query: { enabled: tokenIds.length > 0 && !!trancheAddress },
+    query: { 
+      enabled: tokenIds.length > 0 && !!trancheAddress,
+      refetchInterval: 3000,
+    },
   });
 
   // Parse note info results
@@ -156,85 +170,51 @@ export function PortfolioSummary() {
 
   if (isLoading) {
     return (
-      <Card className="mb-6">
-        <CardContent className="py-6">
-          <div className="animate-pulse flex space-x-4">
-            <div className="flex-1 space-y-4 py-1">
-              <div className="h-4 bg-[var(--charcoal)] rounded w-3/4"></div>
-              <div className="space-y-3">
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="h-4 bg-[var(--charcoal)] rounded col-span-1"></div>
-                  <div className="h-4 bg-[var(--charcoal)] rounded col-span-1"></div>
-                  <div className="h-4 bg-[var(--charcoal)] rounded col-span-1"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="mb-4 p-3 bg-[var(--charcoal)] rounded-lg border border-[var(--gold)]/20 animate-pulse">
+        <div className="h-4 bg-[var(--obsidian)] rounded w-1/3"></div>
+      </div>
     );
   }
 
   return (
-    <Card className="mb-6 border-[var(--gold)]/20">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-lg">Portfolio Summary</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {/* Total Principal */}
-          <div className="p-3 bg-[var(--charcoal)] rounded-lg">
-            <p className="text-xs text-[var(--text-muted)] mb-1">Total Invested</p>
-            <p className="text-lg font-semibold text-[var(--text-primary)]">
-              {stats.totalPrincipal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-              <span className="text-sm font-normal text-[var(--text-muted)]"> USDT</span>
-            </p>
-          </div>
-
-          {/* Outstanding Value */}
-          <div className="p-3 bg-[var(--charcoal)] rounded-lg">
-            <p className="text-xs text-[var(--text-muted)] mb-1">Current Value</p>
-            <p className="text-lg font-semibold text-[var(--gold)]">
-              {stats.outstandingValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-              <span className="text-sm font-normal text-[var(--text-muted)]"> USDT</span>
-            </p>
-          </div>
-
-          {/* Interest Earned */}
-          <div className="p-3 bg-[var(--charcoal)] rounded-lg">
-            <p className="text-xs text-[var(--text-muted)] mb-1">Interest Earned</p>
-            <p className="text-lg font-semibold text-green-400">
-              +{stats.totalInterestEarned.toLocaleString(undefined, { maximumFractionDigits: 4 })}
-              <span className="text-sm font-normal text-[var(--text-muted)]"> USDT</span>
-            </p>
-          </div>
-
-          {/* Average APR */}
-          <div className="p-3 bg-[var(--charcoal)] rounded-lg">
-            <p className="text-xs text-[var(--text-muted)] mb-1">Avg APR</p>
-            <p className="text-lg font-semibold text-[var(--text-primary)]">
-              {stats.weightedApr.toFixed(1)}%
-            </p>
-          </div>
+    <div className="mb-4 p-2 bg-[var(--charcoal)] rounded-lg border border-[var(--gold)]/20 overflow-x-auto scrollbar-themed">
+      <div className="flex items-center gap-3 text-xs whitespace-nowrap min-w-0">
+        {/* Title */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <TokenIcon token="CL8Y" size="sm" />
+          <span className="font-medium text-[var(--text-primary)]">Portfolio</span>
+          <span className="text-[var(--text-muted)]">
+            ({stats.activeNotes}{stats.completedNotes > 0 ? `+${stats.completedNotes}` : ''})
+          </span>
         </div>
 
-        {/* Secondary Stats */}
-        <div className="mt-4 flex flex-wrap gap-4 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="text-[var(--text-muted)]">Notes:</span>
-            <span className="text-[var(--text-secondary)]">
-              {stats.activeNotes} active
-              {stats.completedNotes > 0 && `, ${stats.completedNotes} completed`}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[var(--text-muted)]">Principal Repaid:</span>
-            <span className="text-[var(--text-secondary)]">
-              {stats.totalPrincipalRepaid.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDT
-            </span>
-          </div>
+        <span className="text-[var(--charcoal)]">|</span>
+
+        {/* Stats */}
+        <div className="flex items-center gap-1 shrink-0">
+          <TokenIcon token="USDT" size="xs" />
+          <span className="text-[var(--text-primary)] font-medium">
+            {stats.totalPrincipal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          </span>
         </div>
-      </CardContent>
-    </Card>
+
+        <span className="text-[var(--text-muted)]">→</span>
+
+        <div className="flex items-center gap-1 shrink-0">
+          <TokenIcon token="USDT" size="xs" />
+          <span className="text-[var(--gold)] font-medium">
+            {stats.outstandingValue.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+          </span>
+        </div>
+
+        <span className="text-green-400 font-medium shrink-0">
+          +{stats.totalInterestEarned.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+        </span>
+
+        <span className="text-[var(--text-muted)] shrink-0">
+          {stats.weightedApr.toFixed(0)}%
+        </span>
+      </div>
+    </div>
   );
 }

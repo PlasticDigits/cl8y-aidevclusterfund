@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Button } from '@/components/ui/Button';
+import { TokenIcon } from '@/components/ui/TokenIcon';
 import { TRANCHE_CAP_USDT, DEFAULT_APR_PERCENT } from '@/lib/config';
 
 interface TrancheData {
@@ -128,26 +129,38 @@ export function TrancheCard({ tranche, onDeposit, isConnected }: Props) {
 
           {/* Breakdown - responsive grid */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
-            <div className="p-3 bg-[var(--charcoal)] rounded-lg">
+            <div className="p-3 bg-[var(--charcoal)] rounded-lg relative overflow-hidden">
+              <div className="absolute top-2 right-2 opacity-20">
+                <TokenIcon token="USDT" size="lg" />
+              </div>
               <p className="text-xs text-[var(--text-muted)] mb-1">Community</p>
-              <p className="font-mono text-[var(--text-primary)]">
-                ${communityDeposited.toLocaleString()}
+              <p className="font-mono text-[var(--text-primary)] flex items-center justify-center gap-1">
+                <TokenIcon token="USDT" size="sm" />
+                {communityDeposited.toLocaleString()}
               </p>
               <p className="text-xs text-[var(--text-muted)]">
-                of ${communityCap.toLocaleString()}
+                of {communityCap.toLocaleString()}
               </p>
             </div>
-            <div className="p-3 bg-[var(--charcoal)] rounded-lg">
+            <div className="p-3 bg-[var(--charcoal)] rounded-lg relative overflow-hidden">
+              <div className="absolute top-2 right-2 opacity-20">
+                <TokenIcon token="CZODIAC" size="lg" />
+              </div>
               <p className="text-xs text-[var(--text-muted)] mb-1">CZodiac Match</p>
-              <p className="font-mono text-[var(--aqua)]">
-                ${matchedDeposited.toLocaleString()}
+              <p className="font-mono text-[var(--aqua)] flex items-center justify-center gap-1">
+                <TokenIcon token="USDT" size="sm" />
+                {matchedDeposited.toLocaleString()}
               </p>
               <p className="text-xs text-[var(--text-muted)]">1:1 Matched</p>
             </div>
-            <div className="p-3 bg-[var(--charcoal)] rounded-lg">
+            <div className="p-3 bg-[var(--charcoal)] rounded-lg relative overflow-hidden">
+              <div className="absolute top-2 right-2 opacity-20">
+                <TokenIcon token="CL8Y" size="lg" />
+              </div>
               <p className="text-xs text-[var(--text-muted)] mb-1">Ceramic Services</p>
-              <p className="font-mono text-[var(--ember)]">
-                ${servicesValue.toLocaleString()}
+              <p className="font-mono text-[var(--ember)] flex items-center justify-center gap-1">
+                <span className="text-[var(--ember)]">$</span>
+                {servicesValue.toLocaleString()}
               </p>
               <p className="text-xs text-[var(--text-muted)]">1.5x QA+Audit</p>
             </div>

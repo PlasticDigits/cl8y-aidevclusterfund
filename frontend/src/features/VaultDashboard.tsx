@@ -3,6 +3,7 @@ import { useAccount, useReadContract, useReadContracts, useWriteContract, useWai
 import { formatUnits } from 'viem';
 import { toast } from 'sonner';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
+import { TokenIcon } from '@/components/ui/TokenIcon';
 import { ADDRESSES } from '@/lib/config';
 import { DonationMatchVaultABI } from '@/lib/abi/DonationMatchVault';
 import { DonationTrancheABI } from '@/lib/abi/DonationTranche';
@@ -263,9 +264,12 @@ export function VaultDashboard() {
         {/* Vault Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-[var(--charcoal)] rounded-lg">
           <div>
-            <p className="text-xs text-[var(--text-muted)]">USDT Balance</p>
+            <p className="text-xs text-[var(--text-muted)] flex items-center gap-1">
+              <TokenIcon token="USDT" size="sm" />
+              Balance
+            </p>
             <p className="font-semibold text-[var(--gold)]">
-              {balance.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDT
+              {balance.toLocaleString(undefined, { maximumFractionDigits: 2 })}
             </p>
           </div>
           <div>
@@ -276,14 +280,15 @@ export function VaultDashboard() {
           </div>
           <div>
             <p className="text-xs text-[var(--text-muted)]">Notes Value</p>
-            <p className="font-semibold text-[var(--text-primary)]">
-              {totalNoteValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDT
+            <p className="font-semibold text-[var(--text-primary)] flex items-center gap-1">
+              <TokenIcon token="USDT" size="sm" />
+              {totalNoteValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}
             </p>
           </div>
           <div>
             <p className="text-xs text-[var(--text-muted)]">Tranche Approved</p>
             <p className={`font-semibold ${hasUnlimitedAllowance ? 'text-green-400' : 'text-yellow-400'}`}>
-              {hasUnlimitedAllowance ? 'Unlimited' : `${allowance.toFixed(0)} USDT`}
+              {hasUnlimitedAllowance ? 'Unlimited' : `${allowance.toFixed(0)}`}
             </p>
           </div>
         </div>

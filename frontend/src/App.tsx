@@ -121,6 +121,11 @@ function Dashboard() {
         <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
+              <img 
+                src="/images/CLAY-64.png" 
+                alt="CL8Y" 
+                className="w-8 h-8"
+              />
               <span className="text-xl font-bold font-display text-[var(--gold)]">
                 CL8Y
               </span>

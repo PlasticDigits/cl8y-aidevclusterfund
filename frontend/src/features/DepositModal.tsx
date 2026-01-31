@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, useSwitchChain } from 'wagmi';
 import { parseEther, formatEther } from 'viem';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/Button';
-import { ADDRESSES } from '@/lib/config';
+import { TokenIcon } from '@/components/ui/TokenIcon';
+import { ADDRESSES, EXPECTED_CHAIN_ID, EXPECTED_CHAIN_NAME } from '@/lib/config';
 import { ERC20ABI } from '@/lib/abi/erc20';
 import { DonationTrancheABI } from '@/lib/abi/DonationTranche';
 import { parseContractError } from '@/lib/errorMessages';
@@ -19,7 +20,11 @@ export function DepositModal({ isOpen, onClose, remainingCapacity, onSuccess }: 
   const [amount, setAmount] = useState('');
   const [step, setStep] = useState<'input' | 'approve' | 'deposit' | 'success'>('input');
   
-  const { address } = useAccount();
+  const { address, chainId } = useAccount();
+  const { switchChain, isPending: isSwitching } = useSwitchChain();
+  
+  // Check if wallet is on the correct chain
+  const isWrongChain = chainId !== undefined && chainId !== EXPECTED_CHAIN_ID;
   const trancheAddress = ADDRESSES.DONATION_TRANCHE;
 
   // Read USDT balance
@@ -31,14 +36,26 @@ export function DepositModal({ isOpen, onClose, remainingCapacity, onSuccess }: 
     query: { enabled: !!address },
   });
 
-  // Read USDT allowance
-  const { data: allowance } = useReadContract({
+  // Read USDT allowance - refetch frequently to detect changes after deposits
+  const { data: allowance, refetch: refetchAllowance } = useReadContract({
     address: ADDRESSES.USDT,
     abi: ERC20ABI,
     functionName: 'allowance',
     args: address && trancheAddress ? [address, trancheAddress] : undefined,
-    query: { enabled: !!address && !!trancheAddress },
+    query: { 
+      enabled: !!address && !!trancheAddress,
+      refetchInterval: isOpen ? 2000 : false, // Poll when modal is open
+    },
   });
+
+  // Reset state and refetch allowance when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setAmount('');
+      setStep('input');
+      refetchAllowance();
+    }
+  }, [isOpen, refetchAllowance]);
 
   // Read effective minimum deposit from contract
   const { data: effectiveMinDeposit } = useReadContract({
@@ -167,6 +184,7 @@ export function DepositModal({ isOpen, onClose, remainingCapacity, onSuccess }: 
   const isPartialDeposit = amountWei > remainingCapacity && remainingCapacity > 0n;
 
   const isValidAmount =
+    !isWrongChain &&
     actualDepositAmount >= minDeposit &&
     amountWei <= (usdtBalance || 0n) &&
     remainingCapacity > 0n;
@@ -188,7 +206,8 @@ export function DepositModal({ isOpen, onClose, remainingCapacity, onSuccess }: 
           ✕
         </button>
 
-        <h2 className="text-xl font-bold font-display text-[var(--gold)] mb-4">
+        <h2 className="text-xl font-bold font-display text-[var(--gold)] mb-4 flex items-center gap-2">
+          <TokenIcon token="USDT" size="lg" />
           Contribute USDT
         </h2>
 
@@ -209,18 +228,41 @@ export function DepositModal({ isOpen, onClose, remainingCapacity, onSuccess }: 
           </div>
         ) : (
           <>
+            {/* Wrong chain warning */}
+            {isWrongChain && (
+              <div className="mb-4 p-4 bg-[var(--ember)]/10 border border-[var(--ember)]/50 rounded-lg">
+                <p className="text-sm text-[var(--ember)] font-medium mb-2">
+                  Wrong Network
+                </p>
+                <p className="text-sm text-[var(--text-secondary)] mb-3">
+                  Please switch to {EXPECTED_CHAIN_NAME} to continue.
+                </p>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => switchChain({ chainId: EXPECTED_CHAIN_ID })}
+                  isLoading={isSwitching}
+                >
+                  Switch to {EXPECTED_CHAIN_NAME}
+                </Button>
+              </div>
+            )}
+
             {/* Balance info */}
             <div className="mb-4 p-3 bg-[var(--charcoal)] rounded-lg">
-              <div className="flex justify-between text-sm">
-                <span className="text-[var(--text-muted)]">Your USDT Balance</span>
+              <div className="flex justify-between text-sm items-center">
+                <span className="text-[var(--text-muted)] flex items-center gap-1.5">
+                  <TokenIcon token="USDT" size="sm" />
+                  Your Balance
+                </span>
                 <span className="font-mono text-[var(--text-primary)]">
-                  {usdtBalance ? formatEther(usdtBalance) : '0'} USDT
+                  {usdtBalance ? formatEther(usdtBalance) : '0'}
                 </span>
               </div>
-              <div className="flex justify-between text-sm mt-1">
+              <div className="flex justify-between text-sm mt-1 items-center">
                 <span className="text-[var(--text-muted)]">Available in Tranche</span>
                 <span className="font-mono text-[var(--text-primary)]">
-                  {formatEther(remainingCapacity)} USDT
+                  {formatEther(remainingCapacity)}
                 </span>
               </div>
             </div>
@@ -270,41 +312,81 @@ export function DepositModal({ isOpen, onClose, remainingCapacity, onSuccess }: 
               </div>
             )}
 
-            {/* Matching info */}
+            {/* Impact Breakdown */}
             {actualDepositAmount > 0n && (
-              <div className="mb-6 p-3 bg-[var(--gold)]/10 border border-[var(--gold)]/30 rounded-lg">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm text-[var(--text-secondary)]">Your Deposit</span>
-                  <span className="font-mono text-[var(--text-primary)]">
-                    {formatEther(actualDepositAmount)} USDT
-                  </span>
-                </div>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm text-[var(--text-secondary)]">CZodiac Matching</span>
-                  <span className="font-mono text-[var(--gold)]">
-                    +{formatEther(matchAmount)} USDT ({matchPercent.toFixed(0)}%)
-                  </span>
-                </div>
-                {matchPercent < 100 && matchAmount > 0n && (
-                  <p className="text-xs text-orange-400 mt-1">
-                    Matching limited by {matchPercentBps < 10000n ? 'tranche capacity or vault funds' : 'vault funds'}
-                  </p>
-                )}
-                {matchPercent === 0 && (
-                  <p className="text-xs text-orange-400 mt-1">
-                    No matching available (vault empty or tranche will be full)
-                  </p>
-                )}
-                <div className="border-t border-[var(--gold)]/20 mt-2 pt-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-[var(--text-secondary)]">Total Impact</span>
-                    <span className="font-mono text-[var(--gold)] font-bold">
-                      {formatEther(actualDepositAmount + matchAmount)} USDT
+              <div className="mb-6 space-y-2">
+                {/* (A) Your Deposit */}
+                <div className="p-3 bg-[var(--charcoal)] rounded-lg border border-[var(--charcoal)]">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">A</span>
+                    <span className="text-sm font-medium text-[var(--text-secondary)]">Your Deposit</span>
+                  </div>
+                  <div className="flex items-center justify-end gap-1.5">
+                    <TokenIcon token="USDT" size="sm" />
+                    <span className="font-mono text-lg text-[var(--text-primary)] font-semibold">
+                      {formatEther(actualDepositAmount)}
                     </span>
                   </div>
-                  <p className="text-xs text-[var(--gold)] mt-1">
-                    + {(Number(formatEther(actualDepositAmount + matchAmount)) * 0.75).toFixed(2)} USD in QA/Audit services
+                </div>
+
+                {/* (B) CZodiac Matching */}
+                <div className="p-3 bg-[var(--gold)]/10 rounded-lg border border-[var(--gold)]/30">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-bold text-[var(--gold)] uppercase tracking-wider">B</span>
+                    <span className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                      <TokenIcon token="CZODIAC" size="sm" />
+                      CZodiac Matching
+                    </span>
+                    <span className="text-xs text-[var(--gold)] ml-auto">
+                      {matchPercent.toFixed(0)}% match
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-end gap-1.5">
+                    <span className="text-[var(--gold)] text-sm">+</span>
+                    <TokenIcon token="USDT" size="sm" />
+                    <span className="font-mono text-lg text-[var(--gold)] font-semibold">
+                      {formatEther(matchAmount)}
+                    </span>
+                  </div>
+                  {matchPercent < 100 && matchAmount > 0n && (
+                    <p className="text-xs text-orange-400 mt-1.5">
+                      Matching limited by {matchPercentBps < 10000n ? 'tranche capacity or vault funds' : 'vault funds'}
+                    </p>
+                  )}
+                  {matchPercent === 0 && (
+                    <p className="text-xs text-orange-400 mt-1.5">
+                      No matching available (vault empty or tranche will be full)
+                    </p>
+                  )}
+                </div>
+
+                {/* (C) Ceramic Services */}
+                <div className="p-3 bg-[var(--aqua)]/10 rounded-lg border border-[var(--aqua)]/30">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-bold text-[var(--aqua)] uppercase tracking-wider">C</span>
+                    <span className="text-sm font-medium text-[var(--text-secondary)]">Ceramic QA/Audit Services</span>
+                  </div>
+                  <div className="flex items-center justify-end gap-1">
+                    <span className="font-mono text-lg text-[var(--aqua)] font-semibold">
+                      ${(Number(formatEther(actualDepositAmount + matchAmount)) * 0.75).toFixed(2)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[var(--text-muted)] mt-1">
+                    75% of total impact funds professional services
                   </p>
+                </div>
+
+                {/* Total Impact Summary */}
+                <div className="p-3 bg-[var(--black)] rounded-lg border-2 border-[var(--gold)]/50 mt-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-bold text-[var(--gold)] uppercase tracking-wider">Total Impact</span>
+                    <div className="flex items-center gap-1.5">
+                      <TokenIcon token="USDT" size="sm" />
+                      <span className="font-mono text-xl text-[var(--gold)] font-bold">
+                        {formatEther(actualDepositAmount + matchAmount)}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

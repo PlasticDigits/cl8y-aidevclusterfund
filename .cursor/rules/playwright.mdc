@@ -1,0 +1,23 @@
+# Playwright Testing Configuration
+
+When running Playwright tests in this project, always use 20 workers for maximum parallelization.
+
+## Commands
+
+```bash
+# Run all E2E tests
+cd frontend && npx playwright test --workers=20
+
+# Run with debug/headed mode
+cd frontend && npx playwright test --workers=20 --headed
+
+# Run specific test file
+cd frontend && npx playwright test deposit.spec.ts --workers=20
+```
+
+## Important Notes
+
+- The system has 24 CPU cores available
+- Using 20 workers provides good parallelization while leaving headroom
+- Tests that modify shared state (deposits, tranches) are marked with `test.describe.configure({ mode: 'serial' })`
+- Always restart devnet before running tests for a clean state: `./scripts/devnet-stop.sh && ./scripts/devnet-start.sh`

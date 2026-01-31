@@ -12,16 +12,19 @@ const queryClient = new QueryClient({
   },
 });
 
+const useRealWallet = import.meta.env.VITE_USE_REAL_WALLET === 'true';
+
 /**
  * Auto-connect component
- * Automatically connects to the mock wallet on mount
+ * Automatically connects to the mock wallet on mount (only when not using real wallet)
  */
 function AutoConnect({ children }: { children: ReactNode }) {
   const { connect, connectors } = useConnect();
   const { isConnected } = useAccount();
 
   useEffect(() => {
-    if (!isConnected && connectors.length > 0) {
+    // Only auto-connect when using mock wallet, not real wallet
+    if (!useRealWallet && !isConnected && connectors.length > 0) {
       // Auto-connect to the first (mock) connector
       connect({ connector: connectors[0] });
     }

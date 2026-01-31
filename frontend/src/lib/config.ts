@@ -28,6 +28,11 @@ export const TEST_ACCOUNTS = {
 
 // Chain config
 export const BSC_CHAIN_ID = 56;
+export const ANVIL_CHAIN_ID = 31337;
+
+// Expected chain - Anvil in test mode, BSC in production
+export const EXPECTED_CHAIN_ID = isTestMode ? ANVIL_CHAIN_ID : BSC_CHAIN_ID;
+export const EXPECTED_CHAIN_NAME = isTestMode ? 'Anvil (Local)' : 'BNB Smart Chain';
 
 // Invite code
 export const INVITE_CODE = 'donate';
