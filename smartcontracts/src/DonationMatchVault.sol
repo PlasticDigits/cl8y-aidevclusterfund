@@ -10,6 +10,21 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * @title DonationMatchVault
  * @notice Holds USDT for matching donations and accumulates matched NFT donation notes
  * @dev Owned by CZodiac multisig. Auto-approves DonationTranche at deployment.
+ *
+ * SECURITY NOTICE:
+ * This vault grants unlimited USDT approval to the DonationTranche contract. This design
+ * choice enables seamless matching without per-transaction approvals. However, it means
+ * the vault balance is only as secure as the DonationTranche upgrade mechanism.
+ *
+ * IMPORTANT: Only deposit the minimum necessary funds for upcoming tranche matching.
+ * Do NOT use this vault as a treasury or long-term storage for large amounts.
+ * If the DonationTranche proxy is compromised via a malicious upgrade, an attacker
+ * could drain the entire vault balance.
+ *
+ * Recommended practice:
+ * - Fund the vault incrementally based on expected tranche demand
+ * - Monitor vault balance and top up as needed
+ * - Keep excess funds in a separate, more secure multisig wallet
  */
 contract DonationMatchVault is Ownable, IERC721Receiver {
     using SafeERC20 for IERC20;

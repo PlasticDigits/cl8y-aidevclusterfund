@@ -1128,32 +1128,49 @@ contract DonationTrancheAdversarialTest is Test {
         MockUSDT otherToken = new MockUSDT();
         otherToken.mint(address(tranche), 1000 ether);
         
-        uint256 adminBalanceBefore = otherToken.balanceOf(admin);
+        // TREASURY constant from DonationTranche
+        address treasury = tranche.TREASURY();
+        uint256 treasuryBalanceBefore = otherToken.balanceOf(treasury);
         
         // Admin rescues the token
         vm.prank(admin);
         tranche.adminRescueTokens(IERC20(address(otherToken)));
         
-        // Admin should receive the tokens
-        assertEq(otherToken.balanceOf(admin), adminBalanceBefore + 1000 ether);
+        // TREASURY should receive the tokens (not admin)
+        assertEq(otherToken.balanceOf(treasury), treasuryBalanceBefore + 1000 ether);
         assertEq(otherToken.balanceOf(address(tranche)), 0);
     }
     
     /**
      * @notice Test that scheduling more than MAX_SCHEDULE_COUNT reverts
+     * @dev Total scheduled count is capped at MAX_SCHEDULE_COUNT (12)
      */
     function test_ExceedsMaxScheduleCount() public {
-        // Try to schedule more than 12 tranches at once
+        // Initially have 5 scheduled tranches (from initialization)
+        assertEq(tranche.scheduledTrancheCount(), 5);
+        
+        // Try to schedule more than 12 tranches at once - fails per-call limit
         vm.prank(admin);
         vm.expectRevert(DonationTranche.ExceedsMaxSchedule.selector);
         tranche.scheduleAdditionalTranches(13, 0, 0);
         
-        // 12 should succeed
+        // Try to schedule 12 more - fails because total would exceed MAX_SCHEDULE_COUNT
+        // 5 existing + 12 new = 17 > 12
         vm.prank(admin);
+        vm.expectRevert(DonationTranche.ExceedsMaxSchedule.selector);
         tranche.scheduleAdditionalTranches(12, 0, 0);
         
-        // Verify 12 were added (5 initial + 12 new = 17)
-        assertEq(tranche.scheduledTrancheCount(), 17);
+        // Can schedule up to 7 more (5 + 7 = 12)
+        vm.prank(admin);
+        tranche.scheduleAdditionalTranches(7, 0, 0);
+        
+        // Verify total is now at max (12)
+        assertEq(tranche.scheduledTrancheCount(), 12);
+        
+        // Cannot schedule any more
+        vm.prank(admin);
+        vm.expectRevert(DonationTranche.ExceedsMaxSchedule.selector);
+        tranche.scheduleAdditionalTranches(1, 0, 0);
     }
     
     /**

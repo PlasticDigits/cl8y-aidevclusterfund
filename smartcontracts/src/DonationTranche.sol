@@ -39,6 +39,9 @@ contract DonationTranche is
     uint256 public constant BASIS_POINTS = 10000;
     uint256 public constant MAX_SCHEDULE_COUNT = 12; // Maximum tranches to schedule at once
     
+    /// @notice CZodiac multisig address for rescued token recovery
+    address public constant TREASURY = 0x745A676C5c472b50B50e18D4b59e9AeEEc597046;
+    
     // ============ Storage Variables ============
     // Note: Order matters for upgrade compatibility. Only append new variables.
     
@@ -90,7 +93,7 @@ contract DonationTranche is
     // Reserve storage slots for future upgrades
     // Reduce this gap when adding new state variables
     // Note: Pausable and ReentrancyGuard use ERC-7201 namespaced storage, not sequential slots
-    uint256[47] private __gap;
+    uint256[50] private __gap;
     
     // ============ Events ============
     
@@ -130,6 +133,7 @@ contract DonationTranche is
     error AprExceedsMax();
     error CannotRescueUsdt();
     error ExceedsMaxSchedule();
+    error InvalidUsdtDecimals();
     
     // ============ Constructor ============
     
@@ -164,7 +168,13 @@ contract DonationTranche is
         __ERC721Enumerable_init();
         __AccessManaged_init(_authority);
         __Pausable_init();
-        // Note: UUPSUpgradeable and ReentrancyGuard are stateless (ERC-7201) and have no initializer
+        // Note: ReentrancyGuard uses ERC-7201 namespaced storage (@custom:stateless in OZ v5)
+        // and does not require initialization. Initial storage value of 0 works correctly.
+        
+        // Verify USDT has 18 decimals (BSC USDT standard)
+        // solhint-disable-next-line avoid-low-level-calls
+        (bool success, bytes memory data) = _usdt.staticcall(abi.encodeWithSignature("decimals()"));
+        if (!success || data.length == 0 || abi.decode(data, (uint8)) != 18) revert InvalidUsdtDecimals();
         
         usdt = IERC20(_usdt);
         clusterManager = _clusterManager;
@@ -259,6 +269,8 @@ contract DonationTranche is
         uint256 capOverride
     ) external restricted {
         if (count > MAX_SCHEDULE_COUNT) revert ExceedsMaxSchedule();
+        // Cap total scheduled count to prevent unbounded queue growth
+        if (_scheduledStartTimes.length() + count > MAX_SCHEDULE_COUNT) revert ExceedsMaxSchedule();
         
         // Calculate base start time for first new tranche
         uint256 baseTime;
@@ -348,15 +360,17 @@ contract DonationTranche is
         emit DefaultAprUpdated(oldApr, newAprBps);
     }
 
-    /** @notice Allows the administrator to rescue any ERC20 tokens accidentally sent to the contract
-    * @dev Cannot rescue USDT to prevent draining user funds. Use collectTranche for USDT.
-    * @param _token The ERC20 token contract to rescue (cannot be USDT)
-    */
+    /**
+     * @notice Allows the administrator to rescue any ERC20 tokens accidentally sent to the contract
+     * @dev Cannot rescue USDT to prevent draining user funds. Use collectTranche for USDT.
+     *      Rescued tokens are sent to the TREASURY (CZodiac multisig) for security.
+     * @param _token The ERC20 token contract to rescue (cannot be USDT)
+     */
     function adminRescueTokens(IERC20 _token) external restricted {
         if (address(_token) == address(usdt)) revert CannotRescueUsdt();
         uint256 amount = _token.balanceOf(address(this));
-        _token.safeTransfer(msg.sender, amount);
-        emit TokensRescued(address(_token), msg.sender, amount);
+        _token.safeTransfer(TREASURY, amount);
+        emit TokensRescued(address(_token), TREASURY, amount);
     }
     
     /**
@@ -437,7 +451,7 @@ contract DonationTranche is
      * @param tokenId The note to repay
      * @param amount Amount of USDT to pay
      */
-    function repay(uint256 tokenId, uint256 amount) external nonReentrant {
+    function repay(uint256 tokenId, uint256 amount) external whenNotPaused nonReentrant {
         if (amount == 0) revert ZeroAmount();
         if (!_exists(tokenId)) revert InvalidNote();
         
@@ -499,7 +513,7 @@ contract DonationTranche is
      *      Does NOT auto-start next tranche - that happens via deposit() lazy progression
      * @param trancheId The tranche to collect
      */
-    function collectTranche(uint256 trancheId) external {
+    function collectTranche(uint256 trancheId) external whenNotPaused nonReentrant {
         Tranche storage tranche = tranches[trancheId];
 
         if (tranche.endTime == 0 && tranche.cap == 0) revert TrancheNonexistant();
