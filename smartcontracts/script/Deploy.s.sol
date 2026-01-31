@@ -14,13 +14,14 @@ contract DeployScript is Script {
     address constant VAULT_OWNER = 0x745A676C5c472b50B50e18D4b59e9AeEEc597046;
     
     // First tranche start time (0 = start immediately at deployment)
-    uint256 constant FIRST_TRANCHE_START = 0;
+    // 1769945400 = Sunday, February 1, 2026 11:30:00 AM GMT
+    uint256 constant FIRST_TRANCHE_START = 1769945400;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        // Get deployer address from --sender flag (interactive wallet flow)
+        address deployer = msg.sender;
         
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         // 1. Deploy DonationTranche implementation first
         DonationTranche trancheImplementation = new DonationTranche();
