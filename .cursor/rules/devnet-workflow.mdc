@@ -1,0 +1,53 @@
+---
+description: Local devnet workflow for testing smart contracts and frontend
+alwaysApply: true
+---
+
+# Devnet Testing Workflow
+
+This project includes scripts for running a local Anvil devnet with deployed contracts.
+
+## Scripts
+
+- `./scripts/devnet-start.sh` - Start Anvil, deploy contracts, start frontend
+- `./scripts/devnet-status.sh` - Check if devnet is running (reads `.devnet-status.json`)
+- `./scripts/devnet-stop.sh` - Stop all processes and clean up
+
+## Usage Pattern
+
+```bash
+# 1. Start devnet
+./scripts/devnet-start.sh
+
+# 2. Check status (useful before interactions)
+./scripts/devnet-status.sh
+
+# 3. Test in browser at http://localhost:5173
+# 4. Use Browser MCP for automated testing
+
+# 5. ALWAYS stop devnet when done
+./scripts/devnet-stop.sh
+```
+
+## Important Rules
+
+1. **Always check status first**: Before starting, run `devnet-status.sh` to see if already running
+2. **Always stop after testing**: Call `./scripts/devnet-stop.sh` after verifying work is complete
+3. **Status file**: `scripts/.devnet-status.json` contains PIDs and deployed addresses
+
+## Test Account
+
+The test wallet auto-connects in test mode:
+- Address: `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266`
+- Balance: 100,000 USDT (mock)
+- Has admin permissions
+
+## Cleanup Reminder
+
+After any browser testing or E2E verification, ensure you run:
+
+```bash
+./scripts/devnet-stop.sh
+```
+
+This prevents orphaned Anvil/Vite processes.

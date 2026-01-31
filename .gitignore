@@ -1,0 +1,21 @@
+# Devnet runtime files
+scripts/.devnet-status.json
+scripts/.anvil.log
+scripts/.vite.log
+
+# Dependencies
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# .env
+.env
+.env*
+!.env.example

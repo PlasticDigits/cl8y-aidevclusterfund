@@ -1,0 +1,61 @@
+# Gitleaks configuration for secret detection
+# https://github.com/gitleaks/gitleaks
+
+title = "Gitleaks Configuration"
+
+[extend]
+# Use the default gitleaks rules
+useDefault = true
+
+# Global allowlist
+[allowlist]
+# Paths to ignore
+paths = [
+    '''node_modules''',
+    '''\.git''',
+    '''dist''',
+    '''build''',
+    '''cache''',
+    '''out''',
+    '''\.next''',
+    '''coverage''',
+    '''playwright-report''',
+    '''test-results''',
+    # Foundry artifacts and dependencies
+    '''smartcontracts/out''',
+    '''smartcontracts/cache''',
+    '''smartcontracts/lib/''',
+    # Lock files
+    '''package-lock\.json''',
+    '''pnpm-lock\.yaml''',
+    # Example files (these intentionally show example values)
+    '''\.env\.example''',
+    # Log files
+    '''\.anvil\.log''',
+    '''\.vite\.log''',
+]
+
+# Allow known test/public values
+regexes = [
+    # Anvil's default test private key (publicly known, safe for local testing)
+    '''0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80''',
+    # Default test address
+    '''0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266''',
+    # Known test mnemonic (Anvil default)
+    '''test test test test test test test test test test test junk''',
+    # Deployed contract addresses (public, on-chain)
+    '''0x5823a01A5372B779cB091e47DBBb176F2831b4c7''',
+]
+
+# Additional custom rules for blockchain projects
+[[rules]]
+id = "private-key-hex"
+description = "Potential Ethereum private key (64 hex chars)"
+regex = '''(?i)(private[_-]?key|priv[_-]?key|secret[_-]?key)\s*[:=]\s*['"]?(0x)?[a-fA-F0-9]{64}['"]?'''
+tags = ["key", "ethereum"]
+
+[[rules]]
+id = "mnemonic-phrase"
+description = "Potential mnemonic/seed phrase (12 or 24 words)"
+regex = '''(?i)(mnemonic|seed|recovery)\s*[:=]\s*['"]?(\w+\s+){11,23}\w+['"]?'''
+tags = ["key", "mnemonic"]
