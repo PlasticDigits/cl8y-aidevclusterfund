@@ -135,7 +135,7 @@ export function RepayModal({ isOpen, onClose, tokenId, noteInfo, onSuccess }: Re
   const prevRepaySuccess = useRef(false);
 
   // Stable approve success handler - need to use ref for executeRepay since it's defined later
-  const executeRepayRef = useRef<() => void>();
+  const executeRepayRef = useRef<(() => void) | undefined>(undefined);
 
   // Handle approve success
   useEffect(() => {

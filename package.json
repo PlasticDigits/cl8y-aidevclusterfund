@@ -1,0 +1,11 @@
+{
+  "name": "fund",
+  "private": true,
+  "scripts": {
+    "prepare": "husky",
+    "typecheck": "cd frontend && npx tsc --noEmit"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}
