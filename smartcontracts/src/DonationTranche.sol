@@ -6,6 +6,8 @@ import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721Enumer
 import "@openzeppelin/contracts-upgradeable/access/manager/AccessManagedUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {DoubleEndedQueue} from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
@@ -20,7 +22,9 @@ contract DonationTranche is
     Initializable,
     ERC721EnumerableUpgradeable, 
     AccessManagedUpgradeable,
-    UUPSUpgradeable 
+    UUPSUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuard
 {
     using SafeERC20 for IERC20;
     using DoubleEndedQueue for DoubleEndedQueue.Bytes32Deque;
@@ -33,6 +37,7 @@ contract DonationTranche is
     uint256 public constant DUST_THRESHOLD = 1 ether; // 1 USDT
     uint256 public constant SECONDS_PER_YEAR = 365 days;
     uint256 public constant BASIS_POINTS = 10000;
+    uint256 public constant MAX_SCHEDULE_COUNT = 12; // Maximum tranches to schedule at once
     
     // ============ Storage Variables ============
     // Note: Order matters for upgrade compatibility. Only append new variables.
@@ -84,6 +89,7 @@ contract DonationTranche is
     // ============ Storage Gap ============
     // Reserve storage slots for future upgrades
     // Reduce this gap when adding new state variables
+    // Note: Pausable and ReentrancyGuard use ERC-7201 namespaced storage, not sequential slots
     uint256[47] private __gap;
     
     // ============ Events ============
@@ -98,6 +104,8 @@ contract DonationTranche is
     event TranchesScheduled(uint256 count, uint256 totalScheduled);
     event DefaultTrancheCapUpdated(uint256 oldCap, uint256 newCap);
     event TrancheCapUpdated(uint256 indexed trancheId, uint256 oldCap, uint256 newCap);
+    event ClusterManagerUpdated(address indexed oldManager, address indexed newManager);
+    event TokensRescued(address indexed token, address indexed to, uint256 amount);
     
     // ============ Errors ============
     
@@ -118,6 +126,10 @@ contract DonationTranche is
     error TrancheNonexistant();
     error ScheduledTimeNotReached();
     error CapBelowDeposited();
+    error ZeroAddress();
+    error AprExceedsMax();
+    error CannotRescueUsdt();
+    error ExceedsMaxSchedule();
     
     // ============ Constructor ============
     
@@ -134,17 +146,25 @@ contract DonationTranche is
      * @param _usdt USDT token address
      * @param _clusterManager Address to receive collected tranche funds
      * @param _vault Vault address for matching funds
+     * @param _firstTrancheStart Start time for first tranche (0 = block.timestamp)
      */
     function initialize(
         address _authority,
         address _usdt,
         address _clusterManager,
-        address _vault
+        address _vault,
+        uint256 _firstTrancheStart
     ) external initializer {
+        if (_authority == address(0)) revert ZeroAddress();
+        if (_usdt == address(0)) revert ZeroAddress();
+        if (_clusterManager == address(0)) revert ZeroAddress();
+        if (_vault == address(0)) revert ZeroAddress();
+        
         __ERC721_init("CL8Y Donation Note", "CL8Y-DN");
         __ERC721Enumerable_init();
         __AccessManaged_init(_authority);
-        // Note: UUPSUpgradeable is stateless and has no initializer
+        __Pausable_init();
+        // Note: UUPSUpgradeable and ReentrancyGuard are stateless (ERC-7201) and have no initializer
         
         usdt = IERC20(_usdt);
         clusterManager = _clusterManager;
@@ -153,9 +173,25 @@ contract DonationTranche is
         defaultTrancheCap = INITIAL_TRANCHE_CAP;
         nextTokenId = 1;
         
-        // Initialize 6 placeholder entries (actual times set in startFirstTranche)
-        for (uint256 i = 0; i < 6; i++) {
-            _scheduledStartTimes.pushBack(bytes32(0));
+        // Start first tranche immediately during initialization
+        uint256 startTimestamp = _firstTrancheStart == 0 ? block.timestamp : _firstTrancheStart;
+        if (startTimestamp < block.timestamp) revert InvalidStartTime();
+        
+        firstTrancheStarted = true;
+        currentTrancheId = 1;
+        
+        Tranche storage tranche = tranches[1];
+        tranche.id = 1;
+        tranche.startTime = startTimestamp;
+        tranche.endTime = startTimestamp + TRANCHE_DURATION;
+        tranche.cap = defaultTrancheCap;
+        
+        emit TrancheStarted(1, startTimestamp, tranche.endTime, tranche.cap);
+        
+        // Schedule 5 additional tranches with 2-week intervals
+        uint256 baseTime = startTimestamp + TRANCHE_DURATION;
+        for (uint256 i = 0; i < 5; i++) {
+            _scheduledStartTimes.pushBack(bytes32(baseTime + (i * TRANCHE_DURATION)));
             _scheduledCaps.pushBack(bytes32(0)); // 0 means use defaultTrancheCap
         }
     }
@@ -169,42 +205,6 @@ contract DonationTranche is
     function _authorizeUpgrade(address newImplementation) internal override restricted {}
     
     // ============ Admin Functions ============
-    
-    /**
-     * @notice Start the first tranche with explicit start time
-     * @dev Can only be called once by admin. Also sets up all scheduled tranche times.
-     * @param startTimestamp When the first tranche should start (must be >= block.timestamp)
-     */
-    function startFirstTranche(uint256 startTimestamp) external restricted {
-        if(startTimestamp == 0) startTimestamp = block.timestamp;
-        if (firstTrancheStarted) revert FirstTrancheAlreadyStarted();
-        if (_scheduledStartTimes.empty()) revert NoTranchesScheduled();
-        if (startTimestamp < block.timestamp) revert InvalidStartTime();
-        
-        firstTrancheStarted = true;
-        
-        // Get the count of scheduled tranches (including first one) and clear placeholders
-        uint256 totalScheduled = _scheduledStartTimes.length();
-        _scheduledStartTimes.clear();
-        _scheduledCaps.clear();
-        
-        // Create tranche 1 directly (not using _startNewTrancheAt since queue is empty)
-        currentTrancheId = 1;
-        Tranche storage tranche = tranches[1];
-        tranche.id = 1;
-        tranche.startTime = startTimestamp;
-        tranche.endTime = startTimestamp + TRANCHE_DURATION;
-        tranche.cap = defaultTrancheCap;
-        
-        emit TrancheStarted(1, startTimestamp, tranche.endTime, tranche.cap);
-        
-        // Schedule remaining tranches (totalScheduled - 1) with 2-week intervals
-        uint256 baseTime = startTimestamp + TRANCHE_DURATION;
-        for (uint256 i = 0; i < totalScheduled - 1; i++) {
-            _scheduledStartTimes.pushBack(bytes32(baseTime + (i * TRANCHE_DURATION)));
-            _scheduledCaps.pushBack(bytes32(0)); // 0 means use defaultTrancheCap
-        }
-    }
     
     /**
      * @notice Start the next tranche when scheduled time has arrived
@@ -249,7 +249,7 @@ contract DonationTranche is
     
     /**
      * @notice Schedule additional tranches
-     * @param count Number of tranches to add
+     * @param count Number of tranches to add (max 12)
      * @param startOverride Start time for first new tranche (0 = auto-calculate based on existing schedule)
      * @param capOverride Custom cap for these tranches (0 = use defaultTrancheCap)
      */
@@ -258,6 +258,8 @@ contract DonationTranche is
         uint256 startOverride,
         uint256 capOverride
     ) external restricted {
+        if (count > MAX_SCHEDULE_COUNT) revert ExceedsMaxSchedule();
+        
         // Calculate base start time for first new tranche
         uint256 baseTime;
         if (startOverride != 0) {
@@ -315,30 +317,60 @@ contract DonationTranche is
     
     /**
      * @notice Update the vault address
-     * @param newVault New vault address
+     * @param newVault New vault address (cannot be zero)
      */
     function setVault(address newVault) external restricted {
+        if (newVault == address(0)) revert ZeroAddress();
         address oldVault = vault;
         vault = newVault;
         emit VaultUpdated(oldVault, newVault);
     }
     
     /**
+     * @notice Update the cluster manager address
+     * @param newClusterManager New address to receive collected tranche funds (cannot be zero)
+     */
+    function setClusterManager(address newClusterManager) external restricted {
+        if (newClusterManager == address(0)) revert ZeroAddress();
+        address oldManager = clusterManager;
+        clusterManager = newClusterManager;
+        emit ClusterManagerUpdated(oldManager, newClusterManager);
+    }
+    
+    /**
      * @notice Update default APR for new notes
-     * @param newAprBps New APR in basis points
+     * @param newAprBps New APR in basis points (max 10000 = 100%)
      */
     function setDefaultApr(uint256 newAprBps) external restricted {
+        if (newAprBps > BASIS_POINTS) revert AprExceedsMax();
         uint256 oldApr = defaultAprBps;
         defaultAprBps = newAprBps;
         emit DefaultAprUpdated(oldApr, newAprBps);
     }
 
     /** @notice Allows the administrator to rescue any ERC20 tokens accidentally sent to the contract
-    * @dev Includes USDT, in case an unexpected issue prevents the vault from withdrawing funds.
-    * @param _token The ERC20 token contract to rescue
+    * @dev Cannot rescue USDT to prevent draining user funds. Use collectTranche for USDT.
+    * @param _token The ERC20 token contract to rescue (cannot be USDT)
     */
     function adminRescueTokens(IERC20 _token) external restricted {
-        _token.transfer(msg.sender, _token.balanceOf(address(this)));
+        if (address(_token) == address(usdt)) revert CannotRescueUsdt();
+        uint256 amount = _token.balanceOf(address(this));
+        _token.safeTransfer(msg.sender, amount);
+        emit TokensRescued(address(_token), msg.sender, amount);
+    }
+    
+    /**
+     * @notice Pause the contract - disables deposits
+     */
+    function pause() external restricted {
+        _pause();
+    }
+    
+    /**
+     * @notice Unpause the contract - enables deposits
+     */
+    function unpause() external restricted {
+        _unpause();
     }
     
     // ============ Public Functions ============
@@ -351,7 +383,7 @@ contract DonationTranche is
      * @param amount Amount of USDT to deposit (may be reduced to fit remaining capacity)
      * @return tokenId The ID of the minted donation note
      */
-    function deposit(uint256 amount) external returns (uint256 tokenId) {
+    function deposit(uint256 amount) external whenNotPaused nonReentrant returns (uint256 tokenId) {
         // Auto-progress to next tranche if needed (triggers lazy collection)
         _ensureCurrentTranche();
         
@@ -405,7 +437,7 @@ contract DonationTranche is
      * @param tokenId The note to repay
      * @param amount Amount of USDT to pay
      */
-    function repay(uint256 tokenId, uint256 amount) external {
+    function repay(uint256 tokenId, uint256 amount) external nonReentrant {
         if (amount == 0) revert ZeroAmount();
         if (!_exists(tokenId)) revert InvalidNote();
         

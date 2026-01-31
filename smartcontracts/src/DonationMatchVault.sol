@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 /**
  * @title DonationMatchVault
  * @notice Holds USDT for matching donations and accumulates matched NFT donation notes
- * @dev Owned by CZodiac multisig
+ * @dev Owned by CZodiac multisig. Auto-approves DonationTranche at deployment.
  */
 contract DonationMatchVault is Ownable, IERC721Receiver {
     using SafeERC20 for IERC20;
@@ -23,14 +23,30 @@ contract DonationMatchVault is Ownable, IERC721Receiver {
     event Withdrawn(address indexed to, uint256 amount);
     event NFTReceived(address indexed operator, address indexed from, uint256 tokenId);
     
+    // ============ Errors ============
+    
+    error ZeroAddress();
+    
     // ============ Constructor ============
     
     /**
+     * @notice Deploy vault with pre-approved DonationTranche address
      * @param _owner The CZodiac multisig address
      * @param _usdt The USDT token address
+     * @param _donationTranche Pre-computed DonationTranche proxy address (CREATE2/CREATE3)
+     * @dev The _donationTranche address should be computed deterministically before deployment
+     *      so the vault can pre-approve it. Use CREATE2/CREATE3 for deterministic addresses.
      */
-    constructor(address _owner, address _usdt) Ownable(_owner) {
+    constructor(address _owner, address _usdt, address _donationTranche) Ownable(_owner) {
+        if (_owner == address(0)) revert ZeroAddress();
+        if (_usdt == address(0)) revert ZeroAddress();
+        if (_donationTranche == address(0)) revert ZeroAddress();
+        
         usdt = IERC20(_usdt);
+        
+        // Pre-approve the DonationTranche contract for unlimited USDT
+        // This allows matching to work immediately after deployment
+        IERC20(_usdt).approve(_donationTranche, type(uint256).max);
     }
     
     // ============ Owner Functions ============

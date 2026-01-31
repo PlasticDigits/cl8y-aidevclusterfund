@@ -43,40 +43,51 @@ contract DonationTrancheTest is Test {
         // Deploy mock USDT
         usdt = new MockUSDT();
         
-        // Deploy vault
-        vault = new DonationMatchVault(multisig, address(usdt));
-        
-        // Deploy DonationTranche implementation
+        // Deploy DonationTranche implementation first
         DonationTranche trancheImpl = new DonationTranche();
         
-        // Deploy proxy with initialization
+        // Pre-compute proxy address for vault to approve
+        uint256 currentNonce = vm.getNonce(address(this));
+        address predictedProxy = vm.computeCreateAddress(address(this), currentNonce + 1);
+        
+        // Deploy vault with pre-approved proxy address
+        vault = new DonationMatchVault(multisig, address(usdt), predictedProxy);
+        
+        // Deploy proxy with initialization (first tranche starts immediately)
         bytes memory initData = abi.encodeWithSelector(
             DonationTranche.initialize.selector,
             address(accessManager),
             address(usdt),
             clusterManager,
-            address(vault)
+            address(vault),
+            uint256(0) // Start first tranche immediately
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(trancheImpl), initData);
         tranche = DonationTranche(address(proxy));
+        
+        require(address(proxy) == predictedProxy, "Proxy address mismatch");
         
         // Setup access control - grant admin role to admin address
         vm.startPrank(admin);
         accessManager.grantRole(ADMIN_ROLE, admin, 0);
         
         // Set target function roles for DonationTranche
-        bytes4[] memory selectors = new bytes4[](7);
-        selectors[0] = DonationTranche.startFirstTranche.selector;
-        selectors[1] = DonationTranche.adminStartNextTranche.selector;
-        selectors[2] = DonationTranche.scheduleAdditionalTranches.selector;
-        selectors[3] = DonationTranche.setVault.selector;
-        selectors[4] = DonationTranche.setDefaultApr.selector;
-        selectors[5] = DonationTranche.setDefaultTrancheCap.selector;
-        selectors[6] = DonationTranche.setTrancheCap.selector;
+        bytes4[] memory selectors = new bytes4[](11);
+        selectors[0] = DonationTranche.adminStartNextTranche.selector;
+        selectors[1] = DonationTranche.scheduleAdditionalTranches.selector;
+        selectors[2] = DonationTranche.setVault.selector;
+        selectors[3] = DonationTranche.setDefaultApr.selector;
+        selectors[4] = DonationTranche.setDefaultTrancheCap.selector;
+        selectors[5] = DonationTranche.setTrancheCap.selector;
+        selectors[6] = DonationTranche.setClusterManager.selector;
+        selectors[7] = DonationTranche.adminRescueTokens.selector;
+        selectors[8] = bytes4(keccak256("upgradeToAndCall(address,bytes)"));
+        selectors[9] = DonationTranche.pause.selector;
+        selectors[10] = DonationTranche.unpause.selector;
         accessManager.setTargetFunctionRole(address(tranche), selectors, ADMIN_ROLE);
         vm.stopPrank();
         
-        // Mint USDT to users
+        // Mint USDT to users and vault
         usdt.mint(user1, 10000 ether);
         usdt.mint(user2, 10000 ether);
         usdt.mint(repayer, 10000 ether);
@@ -91,10 +102,6 @@ contract DonationTrancheTest is Test {
         
         vm.prank(repayer);
         usdt.approve(address(tranche), type(uint256).max);
-        
-        // Vault approves tranche for matching
-        vm.prank(multisig);
-        vault.approveUsdt(address(tranche), type(uint256).max);
     }
     
     // ============ Initialization Tests ============
@@ -104,14 +111,14 @@ contract DonationTrancheTest is Test {
         assertEq(tranche.clusterManager(), clusterManager);
         assertEq(tranche.vault(), address(vault));
         assertEq(tranche.defaultAprBps(), 3000);
-        assertEq(tranche.scheduledTrancheCount(), 6);
-        assertEq(tranche.firstTrancheStarted(), false);
+        // First tranche is now started during initialization
+        assertTrue(tranche.firstTrancheStarted());
+        assertEq(tranche.currentTrancheId(), 1);
+        // 5 remaining scheduled tranches (6 - 1 started)
+        assertEq(tranche.scheduledTrancheCount(), 5);
     }
     
-    function test_StartFirstTranche() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
-        
+    function test_FirstTrancheActiveAfterInit() public view {
         assertTrue(tranche.firstTrancheStarted());
         assertEq(tranche.currentTrancheId(), 1);
         assertEq(tranche.scheduledTrancheCount(), 5);
@@ -124,20 +131,10 @@ contract DonationTrancheTest is Test {
         assertTrue(isActive);
     }
     
-    function test_RevertStartFirstTrancheTwice() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
-        
-        vm.prank(admin);
-        vm.expectRevert(DonationTranche.FirstTrancheAlreadyStarted.selector);
-        tranche.startFirstTranche(block.timestamp);
-    }
-    
     // ============ Deposit Tests ============
     
     function test_Deposit() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 depositAmount = 200 ether;
         uint256 userBalanceBefore = usdt.balanceOf(user1);
@@ -175,8 +172,7 @@ contract DonationTrancheTest is Test {
     }
     
     function test_DepositWithMatching() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 depositAmount = 200 ether;
         uint256 vaultBalanceBefore = usdt.balanceOf(address(vault));
@@ -204,8 +200,7 @@ contract DonationTrancheTest is Test {
         vm.prank(multisig);
         vault.withdraw();
         
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 depositAmount = 200 ether;
         
@@ -225,8 +220,7 @@ contract DonationTrancheTest is Test {
     }
     
     function test_RevertDepositBelowMinimum() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         vm.prank(user1);
         vm.expectRevert(DonationTranche.BelowMinimumDeposit.selector);
@@ -234,8 +228,7 @@ contract DonationTrancheTest is Test {
     }
     
     function test_DepositExceedsCapacity_AcceptsRemaining() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 cap = 1584 ether;
         uint256 userBalanceBefore = usdt.balanceOf(user1);
@@ -263,18 +256,41 @@ contract DonationTrancheTest is Test {
         assertFalse(isActive); // Tranche not active when full
     }
     
-    function test_RevertDepositWhenTrancheNotActive() public {
-        // Don't start tranche
+    function test_RevertDepositBeforeTrancheStarts() public {
+        // Deploy a new instance with future start time
+        uint256 futureStart = block.timestamp + 1 days;
+        
+        DonationTranche trancheImpl = new DonationTranche();
+        uint256 currentNonce = vm.getNonce(address(this));
+        address predictedProxy = vm.computeCreateAddress(address(this), currentNonce + 1);
+        
+        DonationMatchVault newVault = new DonationMatchVault(multisig, address(usdt), predictedProxy);
+        
+        bytes memory initData = abi.encodeWithSelector(
+            DonationTranche.initialize.selector,
+            address(accessManager),
+            address(usdt),
+            clusterManager,
+            address(newVault),
+            futureStart
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(trancheImpl), initData);
+        DonationTranche newTranche = DonationTranche(address(proxy));
+        
+        // Approve USDT for the new tranche
+        vm.prank(user1);
+        usdt.approve(address(newTranche), type(uint256).max);
+        
+        // Should revert because tranche hasn't started yet
         vm.prank(user1);
         vm.expectRevert(DonationTranche.TrancheNotActive.selector);
-        tranche.deposit(200 ether);
+        newTranche.deposit(200 ether);
     }
     
     // ============ Repayment Tests ============
     
     function test_RepayInterestOnly() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         vm.prank(user1);
         uint256 tokenId = tranche.deposit(200 ether);
@@ -302,8 +318,7 @@ contract DonationTrancheTest is Test {
     }
     
     function test_RepayInterestAndPrincipal() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         vm.prank(user1);
         uint256 tokenId = tranche.deposit(200 ether);
@@ -328,8 +343,7 @@ contract DonationTrancheTest is Test {
     }
     
     function test_FullRepaymentMarksComplete() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         vm.prank(user1);
         uint256 tokenId = tranche.deposit(100 ether); // Minimum deposit
@@ -357,8 +371,7 @@ contract DonationTrancheTest is Test {
     }
     
     function test_RevertRepayFullyRepaidNote() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         vm.prank(user1);
         uint256 tokenId = tranche.deposit(100 ether);
@@ -376,8 +389,7 @@ contract DonationTrancheTest is Test {
     // ============ Tranche Collection Tests ============
     
     function test_CollectTranche() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Make deposits
         vm.prank(user1);
@@ -407,16 +419,14 @@ contract DonationTrancheTest is Test {
     }
     
     function test_RevertCollectTrancheNotEnded() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         vm.expectRevert(DonationTranche.TrancheNotEnded.selector);
         tranche.collectTranche(1);
     }
     
     function test_RevertCollectTrancheAlreadyCollected() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         skip(2 weeks + 1);
         
@@ -429,8 +439,7 @@ contract DonationTrancheTest is Test {
     function test_ExhaustAllTranchesAndRestartLater() public {
         // Start with only 2 scheduled tranches for simpler test
         // First, reduce scheduled tranches by running through them
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Run through all 6 initial tranches
         for (uint256 i = 1; i <= 6; i++) {
@@ -461,12 +470,7 @@ contract DonationTrancheTest is Test {
         tranche.scheduleAdditionalTranches(3, 0, 0);
         assertEq(tranche.scheduledTrancheCount(), 3);
         
-        // BUG: startFirstTranche reverts because it was already started
-        vm.prank(admin);
-        vm.expectRevert(DonationTranche.FirstTrancheAlreadyStarted.selector);
-        tranche.startFirstTranche(block.timestamp);
-        
-        // FIX: Use startNextTranche to resume after gap
+        // Use startNextTranche to resume after gap
         vm.prank(admin);
         tranche.startNextTranche();
         
@@ -484,16 +488,14 @@ contract DonationTrancheTest is Test {
         assertTrue(tokenId > 0);
     }
     
-    function test_RevertStartNextTrancheBeforeFirstTranche() public {
-        // Can't use startNextTranche before first tranche was started
-        vm.prank(admin);
-        vm.expectRevert(DonationTranche.FirstTrancheNotStarted.selector);
+    function test_RevertStartNextTrancheWhenCurrentActive() public {
+        // First tranche is active, can't start next
+        vm.expectRevert(DonationTranche.TrancheStillActive.selector);
         tranche.startNextTranche();
     }
     
     function test_RevertStartNextTrancheWhenActive() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Tranche is still active, can't start next
         vm.prank(admin);
@@ -502,8 +504,7 @@ contract DonationTrancheTest is Test {
     }
     
     function test_RevertStartNextTrancheWhenNotCollected() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Fast forward past end
         skip(2 weeks + 1);
@@ -515,8 +516,7 @@ contract DonationTrancheTest is Test {
     }
     
     function test_RevertStartNextTrancheNoScheduled() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Exhaust all tranches by depositing and progressing through them
         // Each deposit after time elapses triggers progression to next tranche
@@ -550,8 +550,7 @@ contract DonationTrancheTest is Test {
     // ============ Admin Tests ============
     
     function test_ScheduleAdditionalTranches() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         vm.prank(admin);
         tranche.scheduleAdditionalTranches(3, 0, 0); // count=3, auto start
@@ -578,8 +577,7 @@ contract DonationTrancheTest is Test {
     // ============ Interest Calculation Tests ============
     
     function test_InterestCalculation() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         vm.prank(user1);
         uint256 tokenId = tranche.deposit(1000 ether);
@@ -600,8 +598,7 @@ contract DonationTrancheTest is Test {
     // ============ ERC721Enumerable Tests ============
     
     function test_TokenEnumeration() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // User1 makes 3 deposits
         vm.startPrank(user1);
@@ -634,8 +631,7 @@ contract DonationTrancheTest is Test {
      * @notice Test Case 1: Tranche has zero remaining - should revert with TrancheFull
      */
     function test_DepositRevertsWhenTrancheZeroRemaining() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 cap = 1584 ether;
         
@@ -653,8 +649,7 @@ contract DonationTrancheTest is Test {
      * @notice Test Case 2: Tranche has less remaining than amount - process with remaining
      */
     function test_DepositAcceptsRemainingWhenLessThanAmount() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 cap = 1584 ether;
         uint256 firstDeposit = 1400 ether; // Leaves 184 remaining
@@ -675,8 +670,7 @@ contract DonationTrancheTest is Test {
      * @notice Test Case 3: Partial deposit accepted, remaining verified
      */
     function test_DepositPartialWhenExceedsRemaining() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 cap = 1584 ether;
         // Make small deposit first, then fill with a large one
@@ -711,8 +705,7 @@ contract DonationTrancheTest is Test {
      * @notice Test Case 4: Tranche full after user deposit - skip matching
      */
     function test_MatchingSkippedWhenTrancheFullAfterDeposit() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 cap = 1584 ether;
         uint256 vaultBalanceBefore = usdt.balanceOf(address(vault));
@@ -740,8 +733,7 @@ contract DonationTrancheTest is Test {
      * @notice Test Case 5: Matching limited when remaining < matchAmount after user deposit
      */
     function test_MatchingLimitedToRemainingCapacity() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 cap = 1584 ether;
         
@@ -776,8 +768,7 @@ contract DonationTrancheTest is Test {
      * @notice Test Case 6: Matching uses full amount when sufficient capacity remains
      */
     function test_MatchingFullAmountWhenSufficientCapacity() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 userDeposit = 200 ether;
         uint256 vaultBalanceBefore = usdt.balanceOf(address(vault));
@@ -807,8 +798,7 @@ contract DonationTrancheTest is Test {
      * If remaining is less than MIN_DEPOSIT, revert even if requested amount is valid
      */
     function test_RevertWhenRemainingBelowMinDeposit() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 cap = 1584 ether;
         
@@ -844,8 +834,7 @@ contract DonationTrancheTest is Test {
      * @notice Edge case: User requests exactly remaining amount
      */
     function test_DepositExactRemainingAmount() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 cap = 1584 ether;
         
@@ -884,8 +873,7 @@ contract DonationTrancheTest is Test {
         
         usdt.mint(address(vault), 100 ether); // Only 100 USDT in vault
         
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 vaultBalanceBefore = usdt.balanceOf(address(vault));
         assertEq(vaultBalanceBefore, 100 ether);
@@ -919,8 +907,7 @@ contract DonationTrancheTest is Test {
      * @notice Test getEffectiveMinDeposit returns MIN_DEPOSIT when plenty of capacity
      */
     function test_EffectiveMinDeposit_ReturnsMinDepositWhenPlentyCapacity() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // With full tranche capacity (1584 USDT), effective min should be MIN_DEPOSIT
         uint256 effectiveMin = tranche.getEffectiveMinDeposit();
@@ -931,8 +918,7 @@ contract DonationTrancheTest is Test {
      * @notice Test getEffectiveMinDeposit returns half remaining + 0.001 when low capacity
      */
     function test_EffectiveMinDeposit_ReturnsHalfRemainingWhenLowCapacity() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Fill tranche to leave only 100 USDT remaining (below MIN_DEPOSIT * 2 = 200)
         // 1584 - 100 = 1484 needed
@@ -952,8 +938,7 @@ contract DonationTrancheTest is Test {
      * @notice Test deposit succeeds with effective minimum when remaining is low
      */
     function test_DepositSucceedsWithEffectiveMinWhenLowCapacity() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Fill tranche to leave 80 USDT remaining
         // Need 1584 - 80 = 1504 deposited
@@ -981,8 +966,7 @@ contract DonationTrancheTest is Test {
      * @notice Test deposit reverts below effective minimum when remaining is low
      */
     function test_DepositRevertsWhenBelowEffectiveMin() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Fill tranche to leave 80 USDT remaining
         vm.prank(user1);
@@ -1002,8 +986,7 @@ contract DonationTrancheTest is Test {
      * @notice Test tranche can be completely filled with dynamic min deposit
      */
     function test_TrancheCanBeCompletelyFilledWithDynamicMin() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 cap = 1584 ether;
         
@@ -1037,8 +1020,7 @@ contract DonationTrancheTest is Test {
      * @notice Test getExpectedMatch returns full matching when capacity and vault have funds
      */
     function test_GetExpectedMatch_FullMatchWhenCapacityAndVaultAvailable() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 depositAmount = 200 ether;
         
@@ -1053,8 +1035,7 @@ contract DonationTrancheTest is Test {
      * @notice Test getExpectedMatch returns partial matching when limited by tranche capacity
      */
     function test_GetExpectedMatch_PartialMatchWhenLimitedByCapacity() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // User deposits 1000, leaving only 584 for matching
         vm.prank(user1);
@@ -1074,8 +1055,7 @@ contract DonationTrancheTest is Test {
      * @notice Test getExpectedMatch returns zero when deposit would fill tranche
      */
     function test_GetExpectedMatch_ZeroMatchWhenDepositFillsTranche() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 cap = 1584 ether;
         
@@ -1095,8 +1075,7 @@ contract DonationTrancheTest is Test {
         vault.withdraw();
         usdt.mint(address(vault), 50 ether);
         
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // User wants to deposit 200, but vault only has 50
         (uint256 matchAmount, uint256 matchPercentBps) = tranche.getExpectedMatch(200 ether);
@@ -1113,8 +1092,7 @@ contract DonationTrancheTest is Test {
         vm.prank(multisig);
         vault.withdraw();
         
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         (uint256 matchAmount, uint256 matchPercentBps) = tranche.getExpectedMatch(200 ether);
         
@@ -1128,8 +1106,7 @@ contract DonationTrancheTest is Test {
      * @notice Test totalMatched is tracked correctly in tranche
      */
     function test_TotalMatchedTrackedInTranche() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // First deposit: 200 user + 200 match
         vm.prank(user1);
@@ -1150,8 +1127,7 @@ contract DonationTrancheTest is Test {
      * @notice Test totalMatched shows partial matching correctly
      */
     function test_TotalMatchedWithPartialMatching() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Deposit 1000, matching gets capped to 584 (1584 - 1000)
         vm.prank(user1);
@@ -1169,8 +1145,7 @@ contract DonationTrancheTest is Test {
         vm.prank(multisig);
         vault.withdraw();
         
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         vm.prank(user1);
         tranche.deposit(200 ether);
@@ -1183,8 +1158,7 @@ contract DonationTrancheTest is Test {
      * @notice Test getCurrentTranche includes totalMatched
      */
     function test_GetCurrentTrancheIncludesTotalMatched() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         vm.prank(user1);
         tranche.deposit(200 ether);
@@ -1196,18 +1170,33 @@ contract DonationTrancheTest is Test {
     // ============ Tranche Scheduling Tests (New Time Logic) ============
     
     /**
-     * @notice Test startFirstTranche with explicit timestamp
+     * @notice Test initialization with future start timestamp
      */
-    function test_StartFirstTrancheWithTimestamp() public {
+    function test_InitWithFutureStartTimestamp() public {
+        // Deploy a new instance with future start
         uint256 futureStart = block.timestamp + 1 days;
         
-        vm.prank(admin);
-        tranche.startFirstTranche(futureStart);
+        DonationTranche trancheImpl = new DonationTranche();
+        uint256 currentNonce = vm.getNonce(address(this));
+        address predictedProxy = vm.computeCreateAddress(address(this), currentNonce + 1);
         
-        assertTrue(tranche.firstTrancheStarted());
-        assertEq(tranche.currentTrancheId(), 1);
+        DonationMatchVault newVault = new DonationMatchVault(multisig, address(usdt), predictedProxy);
         
-        (uint256 id, uint256 startTime, uint256 endTime, , , , , , ) = tranche.getCurrentTranche();
+        bytes memory initData = abi.encodeWithSelector(
+            DonationTranche.initialize.selector,
+            address(accessManager),
+            address(usdt),
+            clusterManager,
+            address(newVault),
+            futureStart
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(trancheImpl), initData);
+        DonationTranche newTranche = DonationTranche(address(proxy));
+        
+        assertTrue(newTranche.firstTrancheStarted());
+        assertEq(newTranche.currentTrancheId(), 1);
+        
+        (uint256 id, uint256 startTime, uint256 endTime, , , , , , ) = newTranche.getCurrentTranche();
         assertEq(id, 1);
         assertEq(startTime, futureStart);
         assertEq(endTime, futureStart + 2 weeks);
@@ -1218,8 +1207,7 @@ contract DonationTrancheTest is Test {
      */
     function test_ScheduleTranches() public {
         // Start first tranche
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Schedule 3 more tranches
         vm.prank(admin);
@@ -1246,8 +1234,7 @@ contract DonationTrancheTest is Test {
      * @notice Test scheduleAdditionalTranches with explicit startOverride
      */
     function test_ScheduleTranchesWithStartOverride() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Get the last scheduled tranche time to ensure new ones don't overlap
         (uint256[] memory beforeTimes, , ) = tranche.getScheduledTranches();
@@ -1270,8 +1257,7 @@ contract DonationTrancheTest is Test {
      * @notice Test scheduleAdditionalTranches with 0 start uses back() + TRANCHE_DURATION when pending exist
      */
     function test_ScheduleTranchesZeroStartWithPending() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Get initial scheduled tranches
         (uint256[] memory beforeTimes, , ) = tranche.getScheduledTranches();
@@ -1293,8 +1279,7 @@ contract DonationTrancheTest is Test {
      * @dev Tests the case when all tranches are exhausted and queue is empty
      */
     function test_ScheduleTranchesZeroStartActiveTranche() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Exhaust all scheduled tranches by progressing through them
         for (uint256 i = 1; i <= 6; i++) {
@@ -1334,8 +1319,7 @@ contract DonationTrancheTest is Test {
      * @notice Test scheduleAdditionalTranches with 0 start uses block.timestamp when all ended
      */
     function test_ScheduleTranchesZeroStartAllEnded() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Exhaust all tranches by progressing through them
         for (uint256 i = 1; i <= 6; i++) {
@@ -1363,16 +1347,30 @@ contract DonationTrancheTest is Test {
     }
     
     /**
-     * @notice Test revert when startFirstTranche with past timestamp
+     * @notice Test revert when initializing with past timestamp
      */
-    function test_RevertStartFirstTranchePastTimestamp() public {
+    function test_RevertInitWithPastTimestamp() public {
         // Warp time forward so past time isn't 0 (which gets converted to block.timestamp)
         vm.warp(1000);
         uint256 pastTime = block.timestamp - 1;
         
-        vm.prank(admin);
+        DonationTranche trancheImpl = new DonationTranche();
+        uint256 currentNonce = vm.getNonce(address(this));
+        address predictedProxy = vm.computeCreateAddress(address(this), currentNonce + 1);
+        
+        DonationMatchVault newVault = new DonationMatchVault(multisig, address(usdt), predictedProxy);
+        
+        bytes memory initData = abi.encodeWithSelector(
+            DonationTranche.initialize.selector,
+            address(accessManager),
+            address(usdt),
+            clusterManager,
+            address(newVault),
+            pastTime
+        );
+        
         vm.expectRevert(DonationTranche.InvalidStartTime.selector);
-        tranche.startFirstTranche(pastTime);
+        new ERC1967Proxy(address(trancheImpl), initData);
     }
     
     /**
@@ -1382,8 +1380,7 @@ contract DonationTrancheTest is Test {
         // Advance time so we have a meaningful "past" time (not 0)
         vm.warp(1000);
         
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Warp forward so "past" time is clearly in the past
         skip(1 days);
@@ -1399,8 +1396,7 @@ contract DonationTrancheTest is Test {
      * @notice Test getScheduledTranches returns correct data
      */
     function test_GetScheduledTranches() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         (uint256[] memory startTimes, uint256[] memory endTimes, ) = tranche.getScheduledTranches();
         
@@ -1427,20 +1423,27 @@ contract DonationTrancheTest is Test {
         
         assertEq(tranche.defaultTrancheCap(), newCap);
         
-        // Start first tranche - should use new cap
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche was created during init with original cap
+        (, , , uint256 firstCap, , , , , ) = tranche.getCurrentTranche();
+        assertEq(firstCap, 1584 ether); // Original cap
         
-        (, , , uint256 cap, , , , , ) = tranche.getCurrentTranche();
-        assertEq(cap, newCap);
+        // Progress to next tranche - it should use the new cap
+        skip(2 weeks + 1);
+        tranche.collectTranche(1);
+        
+        vm.prank(user1);
+        tranche.deposit(100 ether); // Triggers next tranche
+        
+        // New tranche should have the new default cap
+        (, , , uint256 newTrancheCap, , , , , ) = tranche.getCurrentTranche();
+        assertEq(newTrancheCap, newCap);
     }
     
     /**
      * @notice Test setTrancheCap updates specific tranche cap
      */
     function test_SetTrancheCap() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 newCap = 3000 ether;
         
@@ -1455,8 +1458,7 @@ contract DonationTrancheTest is Test {
      * @notice Test setTrancheCap cannot set below totalDeposited
      */
     function test_RevertSetTrancheCapBelowDeposited() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Deposit 500 USDT
         vm.prank(user1);
@@ -1472,8 +1474,7 @@ contract DonationTrancheTest is Test {
      * @notice Test setTrancheCap reverts for nonexistent tranche
      */
     function test_RevertSetTrancheCapNonexistent() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         vm.prank(admin);
         vm.expectRevert(DonationTranche.TrancheNonexistant.selector);
@@ -1484,8 +1485,7 @@ contract DonationTrancheTest is Test {
      * @notice Test scheduleAdditionalTranches with custom cap
      */
     function test_ScheduleTranchesWithCustomCap() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 customCap = 10000 ether;
         
@@ -1506,8 +1506,7 @@ contract DonationTrancheTest is Test {
      * @notice Test scheduleAdditionalTranches with 0 cap uses default
      */
     function test_ScheduleTranchesZeroCapUsesDefault() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Schedule with 0 cap (should use default)
         vm.prank(admin);
@@ -1523,8 +1522,7 @@ contract DonationTrancheTest is Test {
      * @notice Test new tranche uses scheduled cap
      */
     function test_NewTrancheUsesScheduledCap() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Schedule tranches with custom cap
         uint256 customCap = 8000 ether;
@@ -1559,8 +1557,7 @@ contract DonationTrancheTest is Test {
      * @notice Test anyone can call startNextTranche when conditions are met
      */
     function test_PublicStartNextTranche() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Make deposit and wait for tranche to end
         vm.prank(user1);
@@ -1580,8 +1577,7 @@ contract DonationTrancheTest is Test {
      * @notice Test startNextTranche respects scheduled time for non-admin
      */
     function test_PublicStartNextTrancheRespectsScheduledTime() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Fill and collect tranche 1
         vm.prank(user1);
@@ -1610,8 +1606,7 @@ contract DonationTrancheTest is Test {
      * @notice Test admin can still start early with adminStartNextTranche
      */
     function test_AdminCanStartTrancheEarly() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Fill and collect tranche 1 early
         vm.prank(user1);
@@ -1636,8 +1631,7 @@ contract DonationTrancheTest is Test {
      * @notice Test collecting a full tranche before endTime
      */
     function test_CollectFullTrancheBeforeEndTime() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         uint256 cap = 1584 ether;
         
@@ -1667,8 +1661,7 @@ contract DonationTrancheTest is Test {
      * @notice Test cannot collect partial tranche before endTime
      */
     function test_CannotCollectPartialTrancheBeforeEndTime() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Partial deposit
         vm.prank(user1);
@@ -1690,8 +1683,7 @@ contract DonationTrancheTest is Test {
      * @notice Test deposit auto-progresses to next tranche after time elapsed
      */
     function test_DepositToNextTrancheAfterTimeElapsed() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Make initial deposit
         vm.prank(user1);
@@ -1716,8 +1708,7 @@ contract DonationTrancheTest is Test {
      * @notice Test deposit auto-collects previous tranche if not collected
      */
     function test_DepositAutoCollectsPreviousTranche() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Deposit in tranche 1
         vm.prank(user1);
@@ -1749,8 +1740,7 @@ contract DonationTrancheTest is Test {
      * @notice Test tranches progress automatically without manual admin start
      */
     function test_TrancheProgressionWithoutManualStart() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Progress through multiple tranches just by depositing after time elapses
         for (uint256 i = 1; i <= 3; i++) {
@@ -1774,8 +1764,7 @@ contract DonationTrancheTest is Test {
      * @notice Test getCurrentTranche returns correct tranche based on time
      */
     function test_GetCurrentTrancheReturnsCorrectByTime() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // Initially should be tranche 1
         (uint256 id1, , , , , , bool isActive1, , ) = tranche.getCurrentTranche();
@@ -1796,8 +1785,7 @@ contract DonationTrancheTest is Test {
      * @notice Test scheduledTrancheCount returns correct count
      */
     function test_ScheduledTrancheCount() public {
-        vm.prank(admin);
-        tranche.startFirstTranche(block.timestamp);
+        // First tranche already started during initialization
         
         // After starting first tranche, should have 5 scheduled
         assertEq(tranche.scheduledTrancheCount(), 5);
@@ -1816,13 +1804,19 @@ contract DonationMatchVaultTest is Test {
     
     address public multisig = address(1);
     address public user = address(2);
+    address public dummyTranche = address(100);
     
     function setUp() public {
         usdt = new MockUSDT();
-        vault = new DonationMatchVault(multisig, address(usdt));
+        vault = new DonationMatchVault(multisig, address(usdt), dummyTranche);
         
         // Fund vault
         usdt.mint(address(vault), 1000 ether);
+    }
+    
+    function test_AutoApprovalDuringConstruction() public view {
+        // Vault should have pre-approved the donationTranche for unlimited USDT
+        assertEq(usdt.allowance(address(vault), dummyTranche), type(uint256).max);
     }
     
     function test_InitialState() public view {

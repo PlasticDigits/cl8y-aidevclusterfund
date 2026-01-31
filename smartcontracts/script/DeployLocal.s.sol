@@ -41,58 +41,64 @@ contract DeployLocalScript is Script {
         usdt.mint(USER2, 100_000 ether);
         console.log("Minted 100,000 USDT to deployer, user1, user2");
 
-        // 4. Deploy DonationMatchVault (deployer is owner, not proxied)
-        DonationMatchVault vault = new DonationMatchVault(
-            DEPLOYER,
-            address(usdt)
-        );
-        console.log("Vault deployed at:", address(vault));
-
-        // 5. Deploy DonationTranche implementation
+        // 4. Deploy DonationTranche implementation first
         DonationTranche trancheImplementation = new DonationTranche();
         console.log("Tranche implementation deployed at:", address(trancheImplementation));
 
-        // 6. Encode initialization data
+        // 5. Pre-compute proxy address
+        uint256 currentNonce = vm.getNonce(DEPLOYER);
+        address predictedProxy = vm.computeCreateAddress(DEPLOYER, currentNonce + 1);
+        console.log("Predicted proxy address:", predictedProxy);
+
+        // 6. Deploy DonationMatchVault with pre-approved proxy address
+        DonationMatchVault vault = new DonationMatchVault(
+            DEPLOYER,
+            address(usdt),
+            predictedProxy
+        );
+        console.log("Vault deployed at:", address(vault));
+
+        // 7. Encode initialization data (first tranche starts immediately)
         bytes memory initData = abi.encodeWithSelector(
             DonationTranche.initialize.selector,
             address(accessManager),
             address(usdt),
             DEPLOYER,  // clusterManager - receives collected funds
-            address(vault)
+            address(vault),
+            uint256(0)  // firstTrancheStart = 0 means start immediately
         );
 
-        // 7. Deploy ERC1967 proxy pointing to implementation
+        // 8. Deploy ERC1967 proxy pointing to implementation
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(trancheImplementation),
             initData
         );
         console.log("Tranche proxy deployed at:", address(proxy));
+        require(address(proxy) == predictedProxy, "Proxy address mismatch!");
 
         // Cast proxy to DonationTranche for subsequent calls
         DonationTranche tranche = DonationTranche(address(proxy));
 
-        // 8. Grant deployer permission to call restricted functions on tranche proxy
-        bytes4[] memory selectors = new bytes4[](6);
-        selectors[0] = DonationTranche.startFirstTranche.selector;
-        selectors[1] = DonationTranche.startNextTranche.selector;
-        selectors[2] = DonationTranche.scheduleAdditionalTranches.selector;
-        selectors[3] = DonationTranche.setVault.selector;
-        selectors[4] = DonationTranche.setDefaultApr.selector;
-        selectors[5] = bytes4(keccak256("upgradeToAndCall(address,bytes)"));
+        // 9. Grant deployer permission to call restricted functions on tranche proxy
+        bytes4[] memory selectors = new bytes4[](11);
+        selectors[0] = DonationTranche.adminStartNextTranche.selector;
+        selectors[1] = DonationTranche.scheduleAdditionalTranches.selector;
+        selectors[2] = DonationTranche.setVault.selector;
+        selectors[3] = DonationTranche.setDefaultApr.selector;
+        selectors[4] = DonationTranche.setDefaultTrancheCap.selector;
+        selectors[5] = DonationTranche.setTrancheCap.selector;
+        selectors[6] = DonationTranche.setClusterManager.selector;
+        selectors[7] = DonationTranche.adminRescueTokens.selector;
+        selectors[8] = bytes4(keccak256("upgradeToAndCall(address,bytes)"));
+        selectors[9] = DonationTranche.pause.selector;
+        selectors[10] = DonationTranche.unpause.selector;
         accessManager.setTargetFunctionRole(address(proxy), selectors, ADMIN_ROLE);
         accessManager.grantRole(ADMIN_ROLE, DEPLOYER, 0);
         console.log("Granted admin access to tranche functions");
 
-        // 9. Fund vault with USDT for matching (50,000 USDT)
-        usdt.transfer(address(vault), 50_000 ether);
-        console.log("Transferred 50,000 USDT to vault");
-
-        // 10. Approve tranche proxy to spend vault's USDT (unlimited)
-        vault.approveUsdt(address(proxy), type(uint256).max);
-        console.log("Vault approved tranche for unlimited USDT");
-
-        // 11. Start first tranche
-        tranche.startFirstTranche(0);
+        // 10. Fund vault with USDT for matching (50,000 USDT)
+        usdt.mint(address(vault), 50_000 ether);
+        console.log("Minted 50,000 USDT to vault for matching");
 
         vm.stopBroadcast();
 
@@ -103,6 +109,8 @@ contract DeployLocalScript is Script {
         console.log("Vault:", address(vault));
         console.log("Tranche (proxy):", address(proxy));
         console.log("Tranche (impl):", address(trancheImplementation));
+        console.log("First tranche started:", tranche.firstTrancheStarted());
+        console.log("Current tranche ID:", tranche.currentTrancheId());
         console.log("\n=== Test Accounts ===");
         console.log("Deployer:", DEPLOYER, "- 100,000 USDT (admin)");
         console.log("User1:", USER1, "- 100,000 USDT");

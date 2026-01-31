@@ -12,42 +12,61 @@ contract DeployScript is Script {
     address constant USDT = 0x55d398326f99059fF775485246999027B3197955;
     address constant CLUSTER_MANAGER = 0x30789c78b7640947db349e319991aaeC416eeB93;
     address constant VAULT_OWNER = 0x745A676C5c472b50B50e18D4b59e9AeEEc597046;
+    
+    // First tranche start time (0 = start immediately at deployment)
+    uint256 constant FIRST_TRANCHE_START = 0;
 
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        address deployer = vm.addr(deployerPrivateKey);
         
         vm.startBroadcast(deployerPrivateKey);
 
-        // 1. Deploy Vault first (not proxied - simple contract)
-        DonationMatchVault vault = new DonationMatchVault(
-            VAULT_OWNER,
-            USDT
-        );
-        console.log("DonationMatchVault deployed at:", address(vault));
-
-        // 2. Deploy DonationTranche implementation
+        // 1. Deploy DonationTranche implementation first
         DonationTranche trancheImplementation = new DonationTranche();
         console.log("DonationTranche implementation deployed at:", address(trancheImplementation));
 
-        // 3. Encode initialization data
+        // 2. Pre-compute proxy address using CREATE2 or deployer nonce
+        // For CREATE: proxy will be deployed at nonce+2 from current position
+        // We need to compute this address before deploying the vault
+        uint256 currentNonce = vm.getNonce(deployer);
+        address predictedProxy = vm.computeCreateAddress(deployer, currentNonce + 1);
+        console.log("Predicted proxy address:", predictedProxy);
+
+        // 3. Deploy Vault with pre-approved proxy address
+        DonationMatchVault vault = new DonationMatchVault(
+            VAULT_OWNER,
+            USDT,
+            predictedProxy
+        );
+        console.log("DonationMatchVault deployed at:", address(vault));
+        console.log("Vault pre-approved proxy for unlimited USDT");
+
+        // 4. Encode initialization data (includes first tranche start)
         bytes memory initData = abi.encodeWithSelector(
             DonationTranche.initialize.selector,
             ACCESS_MANAGER,
             USDT,
             CLUSTER_MANAGER,
-            address(vault)
+            address(vault),
+            FIRST_TRANCHE_START
         );
 
-        // 4. Deploy ERC1967 proxy pointing to implementation
+        // 5. Deploy ERC1967 proxy pointing to implementation
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(trancheImplementation),
             initData
         );
         console.log("DonationTranche proxy deployed at:", address(proxy));
+        
+        // Verify predicted address matches actual
+        require(address(proxy) == predictedProxy, "Proxy address mismatch!");
 
         // Cast proxy to DonationTranche interface for verification
         DonationTranche tranche = DonationTranche(address(proxy));
         console.log("Tranche initialized - nextTokenId:", tranche.nextTokenId());
+        console.log("First tranche started:", tranche.firstTrancheStarted());
+        console.log("Current tranche ID:", tranche.currentTrancheId());
 
         vm.stopBroadcast();
 
@@ -55,16 +74,7 @@ contract DeployScript is Script {
         console.log("\n=== Post-Deployment Steps ===");
         console.log("1. Fund the vault with USDT for matching");
         console.log("");
-        console.log("2. IMPORTANT: Vault must approve tranche BEFORE any deposits can be matched!");
-        console.log("   Vault owner calls:");
-        console.log("   vault.approveUsdt(");
-        console.log("     ", address(proxy), ",");
-        console.log("     type(uint256).max");
-        console.log("   )");
-        console.log("");
-        console.log("3. Admin must call tranche.startFirstTranche() via AccessManager");
-        console.log("");
-        console.log("4. Update frontend .env:");
+        console.log("2. Update frontend .env:");
         console.log("   VITE_DONATION_TRANCHE_ADDRESS=", address(proxy));
         console.log("   VITE_DONATION_VAULT_ADDRESS=", address(vault));
         console.log("");
