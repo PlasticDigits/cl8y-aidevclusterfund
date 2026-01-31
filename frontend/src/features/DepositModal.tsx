@@ -198,7 +198,7 @@ export function DepositModal({ isOpen, onClose, remainingCapacity, onSuccess }: 
       />
 
       {/* Modal */}
-      <div className="relative bg-[var(--midnight)] border border-[var(--charcoal)] rounded-xl p-6 max-w-md w-full">
+      <div className="card relative bg-[var(--midnight)] border border-[var(--charcoal)] rounded-xl p-6 max-w-md w-full">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 text-[var(--text-muted)] hover:text-[var(--text-primary)]"

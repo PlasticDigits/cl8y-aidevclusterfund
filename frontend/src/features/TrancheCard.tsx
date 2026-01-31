@@ -95,8 +95,11 @@ export function TrancheCard({ tranche, onDeposit, isConnected }: Props) {
   const communityCap = cap / 2;
   const servicesValue = tranche.totalDeposited * 1.5;
 
+  // Add glow pulse effect when tranche is active and accepting deposits
+  const isAcceptingDeposits = hasStarted && tranche.isActive && !isFull;
+
   return (
-    <Card variant="premium">
+    <Card variant="premium" className={isAcceptingDeposits ? 'card-glow-pulse' : ''}>
       <CardHeader>
         <div className="flex justify-between items-start">
           <div>
@@ -186,7 +189,7 @@ export function TrancheCard({ tranche, onDeposit, isConnected }: Props) {
                 <Button
                   variant="primary"
                   size="lg"
-                  className="w-full"
+                  className="w-full animate-bob"
                   onClick={onDeposit}
                 >
                   Contribute USDT
@@ -195,7 +198,7 @@ export function TrancheCard({ tranche, onDeposit, isConnected }: Props) {
                 <Button
                   variant="secondary"
                   size="lg"
-                  className="w-full"
+                  className="w-full animate-bob"
                   onClick={onDeposit}
                 >
                   Connect Wallet to Contribute

@@ -110,7 +110,7 @@ export function TransferModal({ isOpen, onClose, tokenId, onSuccess }: TransferM
       />
 
       {/* Modal */}
-      <div className="relative z-10 w-full max-w-md mx-4 bg-[var(--obsidian)] border border-[var(--charcoal)] rounded-xl p-6 shadow-2xl">
+      <div className="card relative z-10 w-full max-w-md mx-4 bg-[var(--obsidian)] border border-[var(--charcoal)] rounded-xl p-6 shadow-2xl">
         <h2 className="text-xl font-bold text-[var(--text-primary)] mb-2">
           Transfer Note #{tokenId.toString()}
         </h2>
