@@ -59,9 +59,9 @@ contract DonationMatchVault is Ownable, IERC721Receiver {
         
         usdt = IERC20(_usdt);
         
-        // Pre-approve the DonationTranche contract for unlimited USDT
-        // This allows matching to work immediately after deployment
-        IERC20(_usdt).approve(_donationTranche, type(uint256).max);
+        // Pre-approve the DonationTranche contract for 17500 USDT
+        // This allows matching to work immediately after deployment with acceptable limits.
+        IERC20(_usdt).approve(_donationTranche, 17_500 ether);
     }
     
     // ============ Owner Functions ============
