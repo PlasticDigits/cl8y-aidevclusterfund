@@ -23,33 +23,26 @@ const TEST_PRIVATE_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae78
 const testAccount = privateKeyToAccount(TEST_PRIVATE_KEY);
 
 /**
- * Check if we should use real wallet or mock
- * Set VITE_USE_REAL_WALLET=true to connect your own browser wallet
- */
-const useRealWallet = import.meta.env.VITE_USE_REAL_WALLET === 'true';
-
-/**
  * Wagmi config for test mode
- * Uses mock connector by default, or EIP-6963 injected wallets if VITE_USE_REAL_WALLET=true
  * 
- * EIP-6963 provides proper multi-wallet discovery without WalletConnect's data collection.
- * Each detected wallet (MetaMask, SafePal, Rabby, etc.) appears as a separate connector.
+ * Provides both options in the UI:
+ * - EIP-6963 injected wallets (MetaMask, SafePal, Rabby, etc.) for testing with real wallets
+ * - Mock wallet (Anvil account[0]) for quick automated testing
+ * 
+ * Users can choose at runtime without changing environment variables.
  */
 export const testWagmiConfig = createConfig({
   chains: [anvilChain],
-  connectors: useRealWallet
-    ? [
-        // EIP-6963: discovers all injected wallets automatically
-        // Each wallet announces itself and appears as a separate option
-        injected({
-          shimDisconnect: true,
-        }),
-      ]
-    : [
-        mock({
-          accounts: [testAccount.address],
-        }),
-      ],
+  connectors: [
+    // EIP-6963: discovers all browser extension wallets automatically
+    injected({
+      shimDisconnect: true,
+    }),
+    // Mock wallet: Anvil's default test account for quick testing
+    mock({
+      accounts: [testAccount.address],
+    }),
+  ],
   transports: {
     [anvilChain.id]: http('http://127.0.0.1:8545'),
   },

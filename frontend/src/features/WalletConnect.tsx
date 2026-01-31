@@ -1,7 +1,7 @@
 import { useAccount, useConnect, useDisconnect, useBalance, useSwitchChain } from 'wagmi';
 import { formatUnits } from 'viem';
 import { Button } from '@/components/ui/Button';
-import { EXPECTED_CHAIN_ID, EXPECTED_CHAIN_NAME } from '@/lib/config';
+import { EXPECTED_CHAIN_ID, EXPECTED_CHAIN_NAME, IS_TEST_MODE } from '@/lib/config';
 
 export function WalletConnect() {
   const { address, isConnected, chainId } = useAccount();
@@ -52,8 +52,9 @@ export function WalletConnect() {
     );
   }
 
-  // Separate EIP-6963 wallets from WalletConnect
+  // Separate connector types
   const injectedWallets = connectors.filter(c => c.type === 'injected');
+  const mockConnector = connectors.find(c => c.type === 'mock');
   const walletConnectConnector = connectors.find(c => c.type === 'walletConnect');
 
   return (
@@ -70,6 +71,19 @@ export function WalletConnect() {
           {connector.name === 'Injected' ? 'Connect Wallet' : connector.name}
         </Button>
       ))}
+      
+      {/* Mock wallet - test mode only, for quick testing with Anvil account */}
+      {IS_TEST_MODE && mockConnector && (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => connect({ connector: mockConnector })}
+          isLoading={isPending}
+          title="Use Anvil test account (0xf39F...)"
+        >
+          Mock Wallet
+        </Button>
+      )}
       
       {/* WalletConnect as separate option with warning */}
       {walletConnectConnector && (

@@ -1,5 +1,5 @@
-import { type ReactNode, useEffect } from 'react';
-import { WagmiProvider as WagmiProviderBase, useConnect, useAccount } from 'wagmi';
+import { type ReactNode } from 'react';
+import { WagmiProvider as WagmiProviderBase } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { testWagmiConfig } from '@/lib/testConfig';
 
@@ -12,40 +12,24 @@ const queryClient = new QueryClient({
   },
 });
 
-const useRealWallet = import.meta.env.VITE_USE_REAL_WALLET === 'true';
-
-/**
- * Auto-connect component
- * Automatically connects to the mock wallet on mount (only when not using real wallet)
- */
-function AutoConnect({ children }: { children: ReactNode }) {
-  const { connect, connectors } = useConnect();
-  const { isConnected } = useAccount();
-
-  useEffect(() => {
-    // Only auto-connect when using mock wallet, not real wallet
-    if (!useRealWallet && !isConnected && connectors.length > 0) {
-      // Auto-connect to the first (mock) connector
-      connect({ connector: connectors[0] });
-    }
-  }, [connect, connectors, isConnected]);
-
-  return <>{children}</>;
-}
-
 interface Props {
   children: ReactNode;
 }
 
 /**
  * Test wallet provider for local Anvil testing
- * Auto-connects with a test wallet, no popups or user interaction needed
+ * 
+ * Provides both options in the UI:
+ * - Real browser wallets via EIP-6963 (MetaMask, SafePal, etc.)
+ * - Mock wallet using Anvil's default test account
+ * 
+ * Users choose at runtime - no auto-connect.
  */
 export function TestWalletProvider({ children }: Props) {
   return (
     <WagmiProviderBase config={testWagmiConfig}>
       <QueryClientProvider client={queryClient}>
-        <AutoConnect>{children}</AutoConnect>
+        {children}
       </QueryClientProvider>
     </WagmiProviderBase>
   );

@@ -75,10 +75,8 @@ echo "Starting frontend..."
 cd "$PROJECT_ROOT/frontend"
 
 # Write env file for frontend
-# USE_REAL_WALLET allows connecting browser wallets instead of mock
 cat > .env.local << EOF
 VITE_TEST_MODE=true
-VITE_USE_REAL_WALLET=true
 VITE_DONATION_TRANCHE_ADDRESS=$TRANCHE_ADDR
 VITE_DONATION_VAULT_ADDRESS=$VAULT_ADDR
 VITE_USDT_ADDRESS=$USDT_ADDR
