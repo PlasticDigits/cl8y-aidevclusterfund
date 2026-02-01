@@ -1815,8 +1815,8 @@ contract DonationMatchVaultTest is Test {
     }
     
     function test_AutoApprovalDuringConstruction() public view {
-        // Vault should have pre-approved the donationTranche for unlimited USDT
-        assertEq(usdt.allowance(address(vault), dummyTranche), type(uint256).max);
+        // Vault should have pre-approved the donationTranche for 17,500 USDT
+        assertEq(usdt.allowance(address(vault), dummyTranche), 17_500 ether);
     }
     
     function test_InitialState() public view {
