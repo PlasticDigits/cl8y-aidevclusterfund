@@ -123,9 +123,7 @@ function Dashboard() {
   // Aggregate funding across all tranches for Funding Timeline
   const currentDeposited = tranche?.totalDeposited ?? demoTranche?.totalDeposited ?? 0;
   const currentMatched = tranche?.totalMatched ?? demoTranche?.totalMatched ?? 0;
-  const { totalDeposited, totalMatched } = trancheAddress
-    ? useAggregatedFunding(currentDeposited, currentMatched)
-    : { totalDeposited: currentDeposited, totalMatched: currentMatched };
+  const { totalDeposited, totalMatched } = useAggregatedFunding(currentDeposited, currentMatched);
 
   const remainingCapacity = trancheResult
     ? trancheResult[5]

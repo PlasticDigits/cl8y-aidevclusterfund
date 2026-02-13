@@ -4,7 +4,8 @@ import { DonationTrancheABI } from '@/lib/abi/DonationTranche';
 
 /**
  * Returns totalDeposited and totalMatched aggregated across all completed tranches,
- * plus the current tranche's amounts when it has deposits.
+ * plus the current tranche's amounts from getCurrentTranche.
+ * When contract is not deployed, returns the passed-in current amounts (e.g. from demo).
  */
 export function useAggregatedFunding(currentTrancheDeposited: number, currentTrancheMatched: number) {
   const trancheAddress = ADDRESSES.DONATION_TRANCHE;
@@ -16,25 +17,12 @@ export function useAggregatedFunding(currentTrancheDeposited: number, currentTra
     query: { enabled: !!trancheAddress },
   });
 
-  const { data: currentTrancheData } = useReadContract({
-    address: trancheAddress,
-    abi: DonationTrancheABI,
-    functionName: 'getCurrentTranche',
-    query: { enabled: !!trancheAddress },
-  });
-
   const currentId = currentTrancheId ? Number(currentTrancheId) : 0;
-  const currentCollected = currentTrancheData
-    ? (currentTrancheData as readonly [bigint, bigint, bigint, bigint, bigint, bigint, boolean, boolean, bigint])[7]
-    : false;
 
-  const trancheIdsToFetch = currentId === 0
+  // Fetch older completed tranches only (1..currentId-1). Current tranche comes from getCurrentTranche (passed in).
+  const trancheIdsToFetch = currentId <= 1
     ? []
-    : currentCollected
-      ? Array.from({ length: currentId }, (_, i) => i + 1)
-      : currentId > 1
-        ? Array.from({ length: currentId - 1 }, (_, i) => i + 1)
-        : [];
+    : Array.from({ length: currentId - 1 }, (_, i) => i + 1);
 
   const trancheCalls = trancheIdsToFetch.map((id) => ({
     address: trancheAddress!,
@@ -51,7 +39,7 @@ export function useAggregatedFunding(currentTrancheDeposited: number, currentTra
   let totalDeposited = 0;
   let totalMatched = 0;
 
-  trancheResults?.forEach((result, index) => {
+  trancheResults?.forEach((result) => {
     if (result.status !== 'success' || !result.result) return;
     const data = result.result as readonly [bigint, bigint, bigint, bigint, boolean, bigint];
     if (!data[4]) return;
@@ -59,9 +47,14 @@ export function useAggregatedFunding(currentTrancheDeposited: number, currentTra
     totalMatched += Number(data[5]) / 1e18;
   });
 
-  if (!currentCollected && currentId >= 1) {
+  // Always add current tranche (from getCurrentTranche) when we have one.
+  // When contract not deployed, currentId is 0 so we use passed-in values as the only source.
+  if (currentId >= 1) {
     totalDeposited += currentTrancheDeposited;
     totalMatched += currentTrancheMatched;
+  } else if (!trancheAddress) {
+    totalDeposited = currentTrancheDeposited;
+    totalMatched = currentTrancheMatched;
   }
 
   return { totalDeposited, totalMatched };
