@@ -120,17 +120,15 @@ export function ScheduledTranches({ currentTrancheId, scheduledTranches, onTranc
     return null;
   }
 
-  // Check if the first scheduled tranche can be started
-  // Show Start button when:
+  // Check if the first scheduled tranche can be started.
+  // Show Start button ONLY when:
   // 1. Current tranche is collected, AND
-  // 2. Browser time has passed scheduled start time OR current tranche is not active (ended)
-  // Note: The contract will validate that blockchain time has passed the scheduled time.
-  // We use isActive as a proxy for whether blockchain time has passed the current tranche end time.
+  // 2. Scheduled launch time has passed (contract enforces block.timestamp >= nextStart).
+  // Do NOT show Start Tranche before launch time—the contract would revert.
   const firstTranche = scheduledTranches[0];
   const timeUntilFirstStart = firstTranche.startTime - now;
   const browserTimeReady = timeUntilFirstStart <= 0;
-  const currentTrancheEnded = currentTranche?.isActive === false;
-  const canStartNext = currentTranche?.collected === true && (browserTimeReady || currentTrancheEnded);
+  const canStartNext = currentTranche?.collected === true && browserTimeReady;
 
   return (
     <Card>

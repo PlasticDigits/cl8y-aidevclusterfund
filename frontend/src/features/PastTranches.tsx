@@ -102,7 +102,7 @@ export function PastTranches() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const trancheAddress = ADDRESSES.DONATION_TRANCHE;
 
-  // Get current tranche ID to know how many past tranches exist
+  // Get current tranche ID and whether it's collected
   const { data: currentTrancheId } = useReadContract({
     address: trancheAddress,
     abi: DonationTrancheABI,
@@ -110,55 +110,76 @@ export function PastTranches() {
     query: { enabled: !!trancheAddress },
   });
 
-  const currentId = currentTrancheId ? Number(currentTrancheId) : 0;
-  const pastTrancheCount = currentId > 1 ? currentId - 1 : 0;
+  const { data: currentTrancheData } = useReadContract({
+    address: trancheAddress,
+    abi: DonationTrancheABI,
+    functionName: 'getCurrentTranche',
+    query: { enabled: !!trancheAddress },
+  });
 
-  // Build contract calls for past tranches (IDs 1 to currentId-1)
-  const trancheCalls = Array.from({ length: pastTrancheCount }, (_, index) => ({
+  const currentId = currentTrancheId ? Number(currentTrancheId) : 0;
+  const currentCollected = currentTrancheData
+    ? (currentTrancheData as readonly [bigint, bigint, bigint, bigint, bigint, bigint, boolean, boolean, bigint])[7]
+    : false;
+
+  // Completed tranches = all collected tranches from 1 to currentId (inclusive when current is collected)
+  const trancheIdsToFetch = currentId === 0
+    ? []
+    : currentCollected
+      ? Array.from({ length: currentId }, (_, i) => i + 1)
+      : currentId > 1
+        ? Array.from({ length: currentId - 1 }, (_, i) => i + 1)
+        : [];
+
+  // Build contract calls for completed tranches
+  const trancheCalls = trancheIdsToFetch.map((id) => ({
     address: trancheAddress!,
     abi: DonationTrancheABI,
     functionName: 'getTranche' as const,
-    args: [BigInt(index + 1)] as const,
+    args: [BigInt(id)] as const,
   }));
 
-  // Fetch all past tranches
+  // Fetch all completed tranches
   const { data: trancheResults, isLoading } = useReadContracts({
     contracts: trancheCalls,
-    query: { enabled: pastTrancheCount > 0 && !!trancheAddress },
+    query: { enabled: trancheCalls.length > 0 && !!trancheAddress },
   });
 
-  // Parse tranche results
-  const pastTranches: TrancheInfo[] = trancheResults
+  // Parse tranche results - only include collected tranches
+  const completedTranches: TrancheInfo[] = trancheResults
     ?.map((result, index) => {
       if (result.status !== 'success' || !result.result) return null;
       const data = result.result as readonly [bigint, bigint, bigint, bigint, boolean, bigint];
-      return {
-        id: index + 1,
+      const id = trancheIdsToFetch[index];
+      if (!data[4]) return null; // Not collected
+      const info: TrancheInfo = {
+        id,
         startTime: Number(data[0]),
         endTime: Number(data[1]),
         cap: Number(data[2]) / 1e18,
         totalDeposited: Number(data[3]) / 1e18,
-        collected: data[4],
+        collected: true,
         totalMatched: Number(data[5]) / 1e18,
       };
+      return info;
     })
     .filter((t): t is TrancheInfo => t !== null)
-    .reverse() ?? []; // Most recent first
+    .reverse() ?? [];
 
   if (!trancheAddress) {
     return null;
   }
 
-  if (pastTrancheCount === 0) {
-    return null; // No past tranches to show
+  if (completedTranches.length === 0 && trancheCalls.length === 0) {
+    return null; // No completed tranches to show
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Past Tranches</CardTitle>
+        <CardTitle>Completed Tranches</CardTitle>
         <p className="text-sm text-[var(--text-muted)] mt-1">
-          {pastTrancheCount} completed tranche{pastTrancheCount !== 1 ? 's' : ''}
+          {completedTranches.length} completed tranche{completedTranches.length !== 1 ? 's' : ''}
         </p>
       </CardHeader>
 
@@ -169,7 +190,7 @@ export function PastTranches() {
           </div>
         ) : (
           <div className="space-y-3">
-            {pastTranches.map((tranche) => (
+            {completedTranches.map((tranche) => (
               <PastTrancheCard
                 key={tranche.id}
                 tranche={tranche}

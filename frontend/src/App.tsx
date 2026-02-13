@@ -100,7 +100,23 @@ function Dashboard() {
       }
     : null;
 
-  const displayTranche = tranche || demoTranche;
+  // When current tranche is collected and we have scheduled tranches, show the *next* tranche
+  // (from scheduled) in the main card with countdown—not the collected one.
+  const currentTrancheIdNum = tranche?.id ?? 0;
+  const nextTrancheFromScheduled = tranche?.collected &&
+    scheduledTranches.length > 0
+    ? {
+        id: currentTrancheIdNum + 1,
+        startTime: scheduledTranches[0].startTime,
+        endTime: scheduledTranches[0].endTime,
+        cap: TRANCHE_CAP_USDT,
+        totalDeposited: 0,
+        isActive: false,
+        collected: false,
+      }
+    : null;
+
+  const displayTranche = nextTrancheFromScheduled ?? tranche ?? demoTranche;
 
   // Calculate total raised (simplified - would aggregate all tranches in production)
   const totalRaised = displayTranche ? displayTranche.totalDeposited : 0;
