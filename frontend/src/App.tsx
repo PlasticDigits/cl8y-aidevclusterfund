@@ -210,7 +210,7 @@ function Dashboard() {
             {scheduledTranches.length > 0 && (
               <CompactErrorBoundary>
                 <ScheduledTranches
-                  currentTrancheId={displayTranche?.id || 0}
+                  currentTrancheId={currentTrancheIdNum}
                   scheduledTranches={scheduledTranches}
                   onTrancheStarted={handleTrancheStarted}
                 />
