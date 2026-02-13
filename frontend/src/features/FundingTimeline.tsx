@@ -7,9 +7,9 @@ interface Props {
 }
 
 export function FundingTimeline({ totalDeposited, totalMatched = 0 }: Props) {
-  const percentage = (totalDeposited / TOTAL_FUNDING_TARGET) * 100;
   // Simple sum: raised = community + matched; target = cumulative total from milestones (23,906)
-  const totalFundingRaised = totalDeposited;
+  const totalFundingRaised = totalDeposited + totalMatched;
+  const percentage = (totalFundingRaised / TOTAL_FUNDING_TARGET) * 100;
   const totalFundingTarget = TOTAL_FUNDING_TARGET;
 
   return (
@@ -55,10 +55,10 @@ export function FundingTimeline({ totalDeposited, totalMatched = 0 }: Props) {
         {/* Milestones list */}
         <div className="space-y-3">
           {FUNDING_MILESTONES.map((milestone) => {
-            const isReached = totalDeposited >= milestone.cumulativeTotal;
+            const isReached = totalFundingRaised >= milestone.cumulativeTotal;
             const isInProgress =
-              totalDeposited < milestone.cumulativeTotal &&
-              (milestone.id === 1 || totalDeposited >= FUNDING_MILESTONES[milestone.id - 2].cumulativeTotal);
+              totalFundingRaised < milestone.cumulativeTotal &&
+              (milestone.id === 1 || totalFundingRaised >= FUNDING_MILESTONES[milestone.id - 2].cumulativeTotal);
 
             return (
               <div
