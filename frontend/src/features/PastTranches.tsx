@@ -39,12 +39,17 @@ function PastTrancheCard({ tranche, isExpanded, onToggle }: {
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-3">
           <span className="text-[var(--gold)] font-bold">#{tranche.id}</span>
-          <span className={`text-xs px-2 py-1 rounded ${
+          <span className={`text-xs px-2 py-1 rounded inline-flex items-center gap-1.5 ${
             tranche.collected 
               ? 'bg-green-500/20 text-green-400' 
               : 'bg-[var(--text-muted)]/20 text-[var(--text-muted)]'
           }`}>
             {tranche.collected ? 'Collected' : 'Ended'}
+            {tranche.collected && (
+              <span className={fillPercent >= 90 ? 'text-green-400' : 'text-white'}>
+                {fillPercent.toFixed(0)}%
+              </span>
+            )}
           </span>
         </div>
         <div className="text-right">

@@ -14,6 +14,7 @@ import { PortfolioSummary } from '@/features/PortfolioSummary';
 import { ADDRESSES, TRANCHE_CAP_USDT, IS_TEST_MODE, OPERATOR_ADDRESSES } from '@/lib/config';
 import { DonationTrancheABI } from '@/lib/abi/DonationTranche';
 import { parseEther } from 'viem';
+import { useAggregatedFunding } from '@/hooks/useAggregatedFunding';
 
 // Lazy load admin components
 const AdminDashboard = lazy(() => import('@/features/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
@@ -113,13 +114,18 @@ function Dashboard() {
         totalDeposited: 0,
         isActive: false,
         collected: false,
+        totalMatched: 0,
       }
     : null;
 
   const displayTranche = nextTrancheFromScheduled ?? tranche ?? demoTranche;
 
-  // Calculate total raised (simplified - would aggregate all tranches in production)
-  const totalRaised = displayTranche ? displayTranche.totalDeposited : 0;
+  // Aggregate funding across all tranches for Funding Timeline
+  const currentDeposited = tranche?.totalDeposited ?? demoTranche?.totalDeposited ?? 0;
+  const currentMatched = tranche?.totalMatched ?? demoTranche?.totalMatched ?? 0;
+  const { totalDeposited, totalMatched } = trancheAddress
+    ? useAggregatedFunding(currentDeposited, currentMatched)
+    : { totalDeposited: currentDeposited, totalMatched: currentMatched };
 
   const remainingCapacity = trancheResult
     ? trancheResult[5]
@@ -199,6 +205,10 @@ function Dashboard() {
               onDeposit={() => setIsDepositOpen(true)}
             />
 
+            <CompactErrorBoundary>
+              <PastTranches />
+            </CompactErrorBoundary>
+
             {scheduledTranches.length > 0 && (
               <CompactErrorBoundary>
                 <ScheduledTranches
@@ -209,11 +219,7 @@ function Dashboard() {
               </CompactErrorBoundary>
             )}
 
-            <CompactErrorBoundary>
-              <PastTranches />
-            </CompactErrorBoundary>
-
-            <FundingTimeline totalRaised={totalRaised} />
+            <FundingTimeline totalDeposited={totalDeposited} totalMatched={totalMatched} />
           </div>
 
           {/* Right column - Notes */}

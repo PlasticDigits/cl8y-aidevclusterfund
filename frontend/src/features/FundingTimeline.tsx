@@ -2,14 +2,19 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { FUNDING_MILESTONES, TOTAL_FUNDING_TARGET } from '@/lib/config';
 
 interface Props {
-  totalRaised: number;
+  totalDeposited: number;
+  totalMatched?: number;
 }
 
-export function FundingTimeline({ totalRaised }: Props) {
-  const percentage = (totalRaised / TOTAL_FUNDING_TARGET) * 100;
-  // Total funding = community (1x) + CZodiac match (1x) + Ceramic services (1.5x) = 3.5x
-  const totalFundingRaised = totalRaised * 3.5;
-  const totalFundingTarget = TOTAL_FUNDING_TARGET * 3.5;
+export function FundingTimeline({ totalDeposited, totalMatched = 0 }: Props) {
+  // Before collection: totalDeposited = community only. After: totalDeposited = community + matched.
+  const communityRaised = totalDeposited - totalMatched;
+  const percentage = (communityRaised / TOTAL_FUNDING_TARGET) * 100;
+  // Total funding = (community + czodiac) + Ceramic 1.5x of that = 2.5 * (community + czodiac)
+  const communityPlusCzodiac = totalDeposited;
+  const totalFundingRaised = communityPlusCzodiac * 2.5;
+  // At target, community=target and czodiac=target (1:1), so (c+cz)=2*target, total=5*target
+  const totalFundingTarget = TOTAL_FUNDING_TARGET * 5;
 
   return (
     <Card>
@@ -30,7 +35,7 @@ export function FundingTimeline({ totalRaised }: Props) {
             </span>
           </div>
           <p className="text-xs text-[var(--text-muted)] mb-2">
-            Includes community donations, CZodiac 1:1 matching, and Ceramic 1.5x services
+            Includes community donations, CZodiac matching, and Ceramic 1.5x services (on community+czodiac)
           </p>
           <div className="h-4 bg-[var(--charcoal)] rounded-full overflow-hidden relative">
             <div
@@ -54,10 +59,10 @@ export function FundingTimeline({ totalRaised }: Props) {
         {/* Milestones list */}
         <div className="space-y-3">
           {FUNDING_MILESTONES.map((milestone) => {
-            const isReached = totalRaised >= milestone.cumulativeTotal;
+            const isReached = communityRaised >= milestone.cumulativeTotal;
             const isInProgress =
-              totalRaised < milestone.cumulativeTotal &&
-              (milestone.id === 1 || totalRaised >= FUNDING_MILESTONES[milestone.id - 2].cumulativeTotal);
+              communityRaised < milestone.cumulativeTotal &&
+              (milestone.id === 1 || communityRaised >= FUNDING_MILESTONES[milestone.id - 2].cumulativeTotal);
 
             return (
               <div
