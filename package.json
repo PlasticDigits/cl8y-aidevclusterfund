@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "prepare": "[ \"$CI\" = true ] || husky",
-    "typecheck": "cd frontend && npx tsc --noEmit"
+    "typecheck": "cd frontend && npx tsc -b --noEmit"
   },
   "devDependencies": {
     "husky": "^9.1.7"

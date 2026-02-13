@@ -2,4 +2,4 @@
 gitleaks protect --staged --config .gitleaks.toml
 
 # Run TypeScript check and tests
-cd frontend && npx tsc --noEmit && npm test -- --run
+cd frontend && npx tsc -b --noEmit && npm test -- --run
