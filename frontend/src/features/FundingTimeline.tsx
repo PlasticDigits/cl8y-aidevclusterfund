@@ -100,7 +100,7 @@ export function FundingTimeline({ totalRaised }: Props) {
                   </div>
                   <div className="text-right">
                     <p className="font-mono text-sm text-[var(--text-secondary)]">
-                      ${(milestone.cumulativeTotal * 3.5).toLocaleString()}
+                      ${milestone.cumulativeTotal.toLocaleString()}
                     </p>
                   </div>
                 </div>
