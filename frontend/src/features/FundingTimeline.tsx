@@ -7,14 +7,10 @@ interface Props {
 }
 
 export function FundingTimeline({ totalDeposited, totalMatched = 0 }: Props) {
-  // Before collection: totalDeposited = community only. After: totalDeposited = community + matched.
-  const communityRaised = totalDeposited - totalMatched;
-  const percentage = (communityRaised / TOTAL_FUNDING_TARGET) * 100;
-  // Total funding = (community + czodiac) + Ceramic 1.5x of that = 2.5 * (community + czodiac)
-  const communityPlusCzodiac = totalDeposited;
-  const totalFundingRaised = communityPlusCzodiac * 2.5;
-  // At target, community=target and czodiac=target (1:1), so (c+cz)=2*target, total=5*target
-  const totalFundingTarget = TOTAL_FUNDING_TARGET * 5;
+  const percentage = (totalDeposited / TOTAL_FUNDING_TARGET) * 100;
+  // Simple sum: raised = community + matched; target = cumulative total from milestones (23,906)
+  const totalFundingRaised = totalDeposited;
+  const totalFundingTarget = TOTAL_FUNDING_TARGET;
 
   return (
     <Card>
@@ -35,7 +31,7 @@ export function FundingTimeline({ totalDeposited, totalMatched = 0 }: Props) {
             </span>
           </div>
           <p className="text-xs text-[var(--text-muted)] mb-2">
-            Includes community donations, CZodiac matching, and Ceramic 1.5x services (on community+czodiac)
+            Community donations plus CZodiac matching toward the cumulative milestone target
           </p>
           <div className="h-4 bg-[var(--charcoal)] rounded-full overflow-hidden relative">
             <div
@@ -59,10 +55,10 @@ export function FundingTimeline({ totalDeposited, totalMatched = 0 }: Props) {
         {/* Milestones list */}
         <div className="space-y-3">
           {FUNDING_MILESTONES.map((milestone) => {
-            const isReached = communityRaised >= milestone.cumulativeTotal;
+            const isReached = totalDeposited >= milestone.cumulativeTotal;
             const isInProgress =
-              communityRaised < milestone.cumulativeTotal &&
-              (milestone.id === 1 || communityRaised >= FUNDING_MILESTONES[milestone.id - 2].cumulativeTotal);
+              totalDeposited < milestone.cumulativeTotal &&
+              (milestone.id === 1 || totalDeposited >= FUNDING_MILESTONES[milestone.id - 2].cumulativeTotal);
 
             return (
               <div
