@@ -62,9 +62,18 @@ export function AdminDashboard() {
   const currentTranche = currentTrancheData ? {
     id: (currentTrancheData as readonly [bigint, bigint, bigint, bigint, bigint, bigint, boolean, boolean, bigint])[0],
     endTime: (currentTrancheData as readonly [bigint, bigint, bigint, bigint, bigint, bigint, boolean, boolean, bigint])[2],
+    cap: (currentTrancheData as readonly [bigint, bigint, bigint, bigint, bigint, bigint, boolean, boolean, bigint])[3],
+    totalDeposited: (currentTrancheData as readonly [bigint, bigint, bigint, bigint, bigint, bigint, boolean, boolean, bigint])[4],
     isActive: (currentTrancheData as readonly [bigint, bigint, bigint, bigint, bigint, bigint, boolean, boolean, bigint])[6],
     collected: (currentTrancheData as readonly [bigint, bigint, bigint, bigint, bigint, bigint, boolean, boolean, bigint])[7],
   } : null;
+
+  const now = BigInt(Math.floor(Date.now() / 1000));
+  const isCurrentTrancheFull = currentTranche ? currentTranche.totalDeposited >= currentTranche.cap : false;
+  const isCurrentTrancheEnded = currentTranche ? currentTranche.endTime > BigInt(0) && now >= currentTranche.endTime : false;
+
+  // Current tranche can be collected when it's full OR ended, and not already collected.
+  const canCollectCurrentTranche = !!currentTranche && !currentTranche.collected && (isCurrentTrancheFull || isCurrentTrancheEnded);
 
   // Check if startNextTranche can be called
   const canStartNextTranche = firstTrancheStarted && 
@@ -109,12 +118,20 @@ export function AdminDashboard() {
     error: startNextError,
   } = useWriteContract();
 
+  const {
+    writeContract: collectTranche,
+    data: collectTxHash,
+    isPending: isCollectPending,
+    error: collectError,
+  } = useWriteContract();
+
   // Transaction receipts
   const { isSuccess: startSuccess } = useWaitForTransactionReceipt({ hash: startTxHash });
   const { isSuccess: scheduleSuccess } = useWaitForTransactionReceipt({ hash: scheduleTxHash });
   const { isSuccess: aprSuccess } = useWaitForTransactionReceipt({ hash: aprTxHash });
   const { isSuccess: vaultSuccess } = useWaitForTransactionReceipt({ hash: vaultTxHash });
   const { isSuccess: startNextSuccess } = useWaitForTransactionReceipt({ hash: startNextTxHash });
+  const { isSuccess: collectSuccess } = useWaitForTransactionReceipt({ hash: collectTxHash });
 
   // Handle errors
   useEffect(() => {
@@ -123,7 +140,8 @@ export function AdminDashboard() {
     if (aprError) toast.error('Failed to update APR', { description: aprError.message.slice(0, 100) });
     if (vaultError) toast.error('Failed to update vault', { description: vaultError.message.slice(0, 100) });
     if (startNextError) toast.error('Failed to start next tranche', { description: startNextError.message.slice(0, 100) });
-  }, [startError, scheduleError, aprError, vaultError, startNextError]);
+    if (collectError) toast.error('Failed to collect tranche', { description: collectError.message.slice(0, 100) });
+  }, [startError, scheduleError, aprError, vaultError, startNextError, collectError]);
 
   // Track previous success states to detect transitions
   const prevStartSuccess = useRef(false);
@@ -131,6 +149,7 @@ export function AdminDashboard() {
   const prevAprSuccess = useRef(false);
   const prevVaultSuccess = useRef(false);
   const prevStartNextSuccess = useRef(false);
+  const prevCollectSuccess = useRef(false);
 
   // Stable success handlers using useCallback
   const handleStartSuccess = useCallback(() => {
@@ -158,6 +177,12 @@ export function AdminDashboard() {
 
   const handleStartNextSuccess = useCallback(() => {
     toast.success('Next tranche started!');
+    refetchCurrentTranche();
+    refetchScheduled();
+  }, [refetchCurrentTranche, refetchScheduled]);
+
+  const handleCollectSuccess = useCallback(() => {
+    toast.success('Tranche collected successfully!');
     refetchCurrentTranche();
     refetchScheduled();
   }, [refetchCurrentTranche, refetchScheduled]);
@@ -198,6 +223,13 @@ export function AdminDashboard() {
     prevStartNextSuccess.current = startNextSuccess;
   }, [startNextSuccess, handleStartNextSuccess]);
 
+  useEffect(() => {
+    if (collectSuccess && !prevCollectSuccess.current) {
+      queueMicrotask(handleCollectSuccess);
+    }
+    prevCollectSuccess.current = collectSuccess;
+  }, [collectSuccess, handleCollectSuccess]);
+
   // Action handlers
   const handleStartFirstTranche = () => {
     if (!trancheAddress) return;
@@ -217,6 +249,16 @@ export function AdminDashboard() {
       address: trancheAddress,
       abi: DonationTrancheABI,
       functionName: 'startNextTranche',
+    });
+  };
+
+  const handleCollectTranche = () => {
+    if (!trancheAddress || !currentTranche) return;
+    collectTranche({
+      address: trancheAddress,
+      abi: DonationTrancheABI,
+      functionName: 'collectTranche',
+      args: [currentTranche.id],
     });
   };
 
@@ -362,6 +404,28 @@ export function AdminDashboard() {
                         ? 'No scheduled tranches'
                         : 'Resume after gap in tranches'
                   : 'Resume after gap in tranches'}
+              </span>
+            </div>
+          )}
+
+          {/* Collect Current Tranche */}
+          {firstTrancheStarted && (
+            <div className="flex items-center gap-4">
+              <button
+                onClick={handleCollectTranche}
+                disabled={isCollectPending || !canCollectCurrentTranche}
+                className="px-4 py-2 rounded-lg bg-[var(--gold)] text-[var(--black)] font-semibold hover:bg-[var(--gold)]/90 disabled:opacity-50 transition-colors"
+              >
+                {isCollectPending ? 'Collecting...' : 'Collect Current Tranche'}
+              </button>
+              <span className="text-sm text-[var(--text-muted)]">
+                {!canCollectCurrentTranche
+                  ? currentTranche?.collected
+                    ? 'Current tranche already collected'
+                    : 'Current tranche must be full or ended'
+                  : isCurrentTrancheFull
+                    ? 'Ready: tranche is full'
+                    : 'Ready: tranche has ended'}
               </span>
             </div>
           )}
