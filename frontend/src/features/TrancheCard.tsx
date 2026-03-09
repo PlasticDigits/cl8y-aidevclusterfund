@@ -116,7 +116,7 @@ export function TrancheCard({ tranche, onDeposit, isConnected }: Props) {
   const communityDeposited = tranche.totalDeposited / 2;
   const matchedDeposited = tranche.totalDeposited / 2;
   const communityCap = cap / 2;
-  const servicesValue = tranche.totalDeposited * 1.5;
+  const servicesValue = tranche.totalDeposited * 1.56;
 
   // Add glow pulse effect when tranche is active and accepting deposits
   const isAcceptingDeposits = hasStarted && tranche.isActive && !isFull;
@@ -201,7 +201,7 @@ export function TrancheCard({ tranche, onDeposit, isConnected }: Props) {
                 <span className="text-[var(--ember)]">$</span>
                 {servicesValue.toLocaleString()}
               </p>
-              <p className="text-xs text-[var(--text-muted)]">1.5x QA+Audit</p>
+              <p className="text-xs text-[var(--text-muted)]">~1.6x Audit</p>
             </div>
           </div>
 

@@ -364,15 +364,15 @@ export function DepositModal({ isOpen, onClose, remainingCapacity, onSuccess }: 
                 <div className="p-3 bg-[var(--aqua)]/10 rounded-lg border border-[var(--aqua)]/30">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs font-bold text-[var(--aqua)] uppercase tracking-wider">C</span>
-                    <span className="text-sm font-medium text-[var(--text-secondary)]">Ceramic QA/Audit Services</span>
+                    <span className="text-sm font-medium text-[var(--text-secondary)]">Ceramic Audit Services</span>
                   </div>
                   <div className="flex items-center justify-end gap-1">
                     <span className="font-mono text-lg text-[var(--aqua)] font-semibold">
-                      ${(Number(formatEther(actualDepositAmount + matchAmount)) * 0.75).toFixed(2)}
+                      ${(Number(formatEther(actualDepositAmount + matchAmount)) * 1.56).toFixed(2)}
                     </span>
                   </div>
                   <p className="text-xs text-[var(--text-muted)] mt-1">
-                    75% of total impact funds professional services
+                    ~1.6x of funded amount in donated audit services
                   </p>
                 </div>
 

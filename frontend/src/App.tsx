@@ -123,7 +123,7 @@ function Dashboard() {
   // Aggregate funding across all tranches for Funding Timeline
   const currentDeposited = tranche?.totalDeposited ?? demoTranche?.totalDeposited ?? 0;
   const currentMatched = tranche?.totalMatched ?? demoTranche?.totalMatched ?? 0;
-  const { totalDeposited, totalMatched } = useAggregatedFunding(currentDeposited, currentMatched);
+  const { totalDeposited } = useAggregatedFunding(currentDeposited, currentMatched);
 
   const remainingCapacity = trancheResult
     ? trancheResult[5]
@@ -217,7 +217,7 @@ function Dashboard() {
               </CompactErrorBoundary>
             )}
 
-            <FundingTimeline totalDeposited={totalDeposited} totalMatched={totalMatched} />
+            <FundingTimeline totalDeposited={totalDeposited} />
           </div>
 
           {/* Right column - Notes */}
@@ -281,8 +281,8 @@ function Dashboard() {
                   <span className="font-mono text-[var(--text-primary)]">100 USDT</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[var(--text-muted)]">Services Matching</span>
-                  <span className="font-mono text-[var(--ember)]">1.5x</span>
+                  <span className="text-[var(--text-muted)]">Audit Matching</span>
+                  <span className="font-mono text-[var(--ember)]">~1.6x</span>
                 </div>
               </div>
             </div>

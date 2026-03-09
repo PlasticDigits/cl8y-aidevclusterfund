@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-CL8Y Fund is a private, invite-only fundraising platform enabling the CL8Y community to contribute USDT toward AI inference infrastructure costs. Contributors receive NFT "Donation Notes" with 30% APR rewards, matched 1:1 by the CZodiac vault, plus 1.5x matching in QA/Audit consulting services from Ceramic (the AI dev cluster manager). All funded development produces AGPL open-source software for public research and education.
+CL8Y Fund is a private, invite-only fundraising platform enabling the CL8Y community to contribute USDT toward AI inference and QA costs. Contributors receive NFT "Donation Notes" with 30% APR rewards, matched 1:1 by the CZodiac vault. Ceramic (the AI dev cluster manager) donates audit and review services valued at $23,400. All funded development produces AGPL open-source software for public research and education.
 
 ---
 
@@ -33,17 +33,17 @@ The private invite system ensures genuine supporters participate, not speculator
 Contributors deserve compensation for supporting infrastructure that benefits everyone. The 30% APR acknowledges that early supporters take on risk and should be rewarded accordingly.
 
 **Matched Contributions**  
-The CZodiac vault matches every community dollar 1:1, doubling the impact. Additionally, Ceramic provides 1.5x matching in QA and audit services, further amplifying each contribution's value.
+The CZodiac vault matches every community dollar 1:1, doubling the impact. Additionally, Ceramic donates audit and review services valued at $23,400, further amplifying each contribution's value.
 
 ### Value Proposition
 
 For every 1 USDT contributed by the community:
 
 - 1 USDT matched by CZodiac vault (2 USDT total capital)
-- 1.5 USDT equivalent in QA/Audit consulting services from Ceramic
+- Audit/Review services donated by Ceramic ($23,400 total across all dApps)
 - 30% APR rewards on the contributor's principal
 
-This creates a 3.5x multiplier effect on community contributions when accounting for services.
+With $14,987 in total funded costs (AI + QA) and $23,400 in donated audit services, community contributions receive approximately a 5x multiplier when accounting for matching and donated services.
 
 ---
 
@@ -296,15 +296,21 @@ Personal dashboard showing:
 
 The funding timeline displays proposed dApps that will be developed as funds are raised. Each milestone shows cumulative funding required.
 
-| Priority | dApp | AI Cost | QA Cost | Cumulative Total |
-|----------|------|---------|---------|------------------|
-| 1 | BRIDGE v1: EVM to TerraClassic | $931 | $1,200 | $2,131 |
-| 2 | DAO NODES: Treasury + Governance | $588 | $1,200 | $3,919 |
-| 3 | DEX: V2+V3, Bot Friendly | $1,127 | $1,800 | $6,846 |
-| 4 | PERP DEX: Hybrid Architecture | $2,254 | $3,000 | $12,100 |
-| 5 | CMM: Auctions & Swaps | $833 | $1,200 | $14,133 |
-| 6 | GameFi: Text RPG Platform | $2,695 | $4,200 | $21,028 |
-| 7 | Money Market: Oracle-free | $1,078 | $1,800 | $23,906 |
+| Priority | dApp | AI Cost | QA Cost | Funded Total | Audits/Reviews (Donated) | Lead Time |
+|----------|------|---------|---------|--------------|--------------------------|-----------|
+| 1 | BRIDGE v1: EVM to TerraClassic | $931 | $367.50 | $1,298.50 | $1,800 | 2.8 weeks |
+| 2 | DEX: V2+Hooks, Bot Friendly | $1,176 | $472.50 | $2,947 | $2,400 | 3.8 weeks |
+| 3 | CMM: Auctions & Swaps | $833 | $315 | $4,095 | $1,800 | 2.6 weeks |
+| 4 | Dex Tools: LP Yield Bonding | $490 | $210 | $4,795 | $1,200 | 1.6 weeks |
+| 5 | Dex Tools: Timecurve Launchpad | $441 | $157.50 | $5,393.50 | $600 | 1.2 weeks |
+| 6 | DAO NODES: Treasury + Governance | $588 | $210 | $6,191.50 | $1,200 | 1.8 weeks |
+| 7 | CL8Y Wallet: Crosschain Inbrowser Wallet | $1,274 | $525 | $7,990.50 | $3,000 | 4.2 weeks |
+| 8 | GameFi: Text RPG Platform | $1,617 | $682.50 | $10,290 | $3,600 | 5.4 weeks |
+| 9 | Money Market: Oracle-free | $1,078 | $420 | $11,788 | $2,400 | 3.4 weeks |
+| 10 | PERP DEX: Hybrid Architecture | $2,254 | $945 | $14,987 | $5,400 | 7.6 weeks |
+| | **TOTALS** | **$10,682** | **$4,305** | **$14,987** | **$23,400** | **34.4 weeks** |
+
+AI and QA costs are funded through community contributions and CZodiac 1:1 matching. Audit/Review services ($23,400 total) are donated by Ceramic.
 
 **Important Disclaimer**: These are suggestions only. Some dApps may be dropped or replaced based on community feedback and technical feasibility. All raised funds will be solely used for developing new blockchain technology that is AGPL open source.
 
@@ -378,7 +384,7 @@ fund/
 - **Tranche Cap**: 1,584 USDT total
 - **Community Contribution**: Up to 792 USDT
 - **Vault Matching**: Up to 792 USDT (1:1)
-- **Ceramic Services**: 1.5x of total = 2,376 USD value
+- **Ceramic Audit Donations**: $23,400 total across all dApps (donated separately, not per-tranche)
 
 ### APR Mechanics
 
