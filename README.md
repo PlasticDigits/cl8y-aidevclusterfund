@@ -11,6 +11,7 @@ CL8Y Fund enables the CL8Y community to contribute USDT toward AI inference infr
 ## Documentation
 
 - [PROPOSAL.md](PROPOSAL.md) - High-level design document covering architecture, user stories, and economic model
+- [docs/architecture.md](docs/architecture.md) - Merge gate **F2** only ([ADR 0001](docs/adr/0001-remove-catchall-codeowners.md)). Product/economic design stays [PROPOSAL.md](PROPOSAL.md).
 - [SPRINT2.md](SPRINT2.md) - Sprint 1 handoff document with implementation notes and known issues
 - [SPRINT3.md](SPRINT3.md) - Sprint 2 handoff document with devnet testing recommendations
 - [SPRINT4.md](SPRINT4.md) - Sprint 3 handoff document with marketplace, repayment UI, and E2E testing scope
